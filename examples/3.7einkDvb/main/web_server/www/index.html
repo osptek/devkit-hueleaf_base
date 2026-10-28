@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#e7e7e4" />
+  <title>Eink E6 3.7</title>
+  <script src="/vue.global.prod.js"></script>
+  <script src="/eink_pipeline.js?v=otp6-20261027"></script>
+  <style>
+    /* 五种配色共用一组变量，见 html[data-theme]。默认：纸面。 */
+    :root {
+      --bg: #e7e7e4;
+      --panel: #f7f7f5;
+      --field: #ffffff;
+      --line: #c9c9c4;
+      --line-2: #9d9d97;
+      --ink: #16181a;
+      --dim: #565c61;
+      --faint: #83888d;
+      --accent: #1f4b78;
+      --accent-ink: #ffffff;
+      --ok: #2c6a44;
+      --err: #a32b21;
+      --tint: rgba(31, 75, 120, 0.09);
+      color-scheme: light;
+    }
+    html[data-theme="mono"] {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --field: #ffffff;
+      --line: #b4b4b4;
+      --line-2: #111111;
+      --ink: #000000;
+      --dim: #3c3c3c;
+      --faint: #6e6e6e;
+      --accent: #000000;
+      --accent-ink: #ffffff;
+      --ok: #146b32;
+      --err: #b00000;
+      --tint: rgba(0, 0, 0, 0.07);
+      color-scheme: light;
+    }
+    html[data-theme="graphite"] {
+      --bg: #17181a;
+      --panel: #1f2124;
+      --field: #141517;
+      --line: #33363a;
+      --line-2: #4b5055;
+      --ink: #e5e6e3;
+      --dim: #a3a8ac;
+      --faint: #7b8085;
+      --accent: #8fb8d8;
+      --accent-ink: #10161c;
+      --ok: #78c08c;
+      --err: #e07a68;
+      --tint: rgba(143, 184, 216, 0.12);
+      color-scheme: dark;
+    }
+    html[data-theme="amber"] {
+      --bg: #16130d;
+      --panel: #1f1b12;
+      --field: #120f0a;
+      --line: #3a3223;
+      --line-2: #574a30;
+      --ink: #f1dcae;
+      --dim: #bda87b;
+      --faint: #8d7c5b;
+      --accent: #e8a33d;
+      --accent-ink: #1a1206;
+      --ok: #a8c46a;
+      --err: #e2704a;
+      --tint: rgba(232, 163, 61, 0.12);
+      color-scheme: dark;
+    }
+    html[data-theme="blueprint"] {
+      --bg: #0d1622;
+      --panel: #132132;
+      --field: #0a121c;
+      --line: #24384d;
+      --line-2: #37546f;
+      --ink: #d8e7f3;
+      --dim: #9ab4ca;
+      --faint: #6f8aa1;
+      --accent: #4ea3e0;
+      --accent-ink: #04121e;
+      --ok: #5cb894;
+      --err: #e2705f;
+      --tint: rgba(78, 163, 224, 0.12);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    html[data-theme="amber"] body,
+    html[data-theme="blueprint"] body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    html[data-theme="amber"] body::before,
+    html[data-theme="blueprint"] body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    html[data-theme="amber"] body::before {
+      background: repeating-linear-gradient(180deg, rgba(255, 220, 150, 0.045) 0 1px, transparent 1px 3px);
+    }
+    html[data-theme="blueprint"] body::before {
+      background:
+        repeating-linear-gradient(90deg, rgba(120, 180, 235, 0.06) 0 1px, transparent 1px 24px),
+        repeating-linear-gradient(180deg, rgba(120, 180, 235, 0.06) 0 1px, transparent 1px 24px);
+    }
+
+    code, .mono, .slider-val, .wifi-meta, .status { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    code { font-size: 0.86em; word-break: break-all; }
+
+    #app {
+      position: relative;
+      z-index: 1;
+      width: min(600px, 100%);
+      margin: 0 auto;
+      padding: 16px 14px 40px;
+    }
+
+    /* ---------- 抬头 ---------- */
+    .hdr {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 9px;
+      border-bottom: 2px solid var(--ink);
+    }
+    .brand {
+      margin: 0;
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+    .spec {
+      margin-top: 3px;
+      font-size: 0.7rem;
+      color: var(--faint);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      padding: 3px 8px;
+      border: 1px solid var(--line-2);
+      font-size: 0.7rem;
+      color: var(--faint);
+      white-space: nowrap;
+    }
+    .link .dot { width: 7px; height: 7px; background: var(--faint); }
+    .link.on { color: var(--ok); border-color: var(--ok); }
+    .link.on .dot { background: var(--ok); }
+
+    /* ---------- 配色选择 ---------- */
+    .picker {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .picker-key { font-size: 0.7rem; color: var(--faint); margin-right: 1px; }
+    .tswatch {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 1px solid var(--line-2);
+      cursor: pointer;
+      appearance: none;
+    }
+    .tswatch i {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      height: 5px;
+      display: block;
+    }
+    .tswatch.active { outline: 2px solid var(--ink); outline-offset: 1px; }
+    .picker-name { margin-left: auto; font-size: 0.7rem; color: var(--faint); }
+
+    /* ---------- 状态读数 ---------- */
+    .meta { border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+    .meta-row {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-top: 1px solid var(--line);
+      font-size: 0.82rem;
+    }
+    .meta-row:first-child { border-top: none; }
+    .meta-key { flex: 0 0 3.4em; color: var(--faint); font-size: 0.76rem; padding-top: 2px; }
+    .meta-val { min-width: 0; word-break: break-all; }
+
+    /* ---------- 分页 ---------- */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--line-2);
+      margin-bottom: 16px;
+    }
+    .tabs button {
+      flex: 1;
+      appearance: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      background: transparent;
+      padding: 9px 6px;
+      font: inherit;
+      font-size: 0.9rem;
+      color: var(--dim);
+      cursor: pointer;
+    }
+    .tabs button:hover { color: var(--ink); }
+    .tabs button.active {
+      color: var(--ink);
+      font-weight: 600;
+      border-bottom-color: var(--accent);
+    }
+
+    .panel { display: grid; gap: 14px; }
+    .field {
+      display: block;
+      margin: 0 0 7px;
+      font-size: 0.74rem;
+      color: var(--faint);
+    }
+    .divider { height: 1px; background: var(--line); }
+    .hint { margin: 0; font-size: 0.8rem; color: var(--dim); }
+    .status { margin: 0; font-size: 0.78rem; color: var(--dim); min-height: 1.2em; word-break: break-all; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .img-meta { margin: 0; font-size: 0.8rem; color: var(--dim); word-break: break-all; }
+
+    /* ---------- 控件 ---------- */
+    .push, .ghost-btn, .primary, .upload-btn, .quant-row button, .style-card, .wifi-item {
+      appearance: none;
+      font: inherit;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .push, .ghost-btn, .upload-btn {
+      border: 1px solid var(--line-2);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 10px 13px;
+      font-size: 0.9rem;
+    }
+    .push { width: 100%; }
+    .upload-btn { width: 100%; border-style: dashed; padding: 14px 16px; font-size: 0.95rem; }
+    .primary {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--accent-ink);
+      padding: 12px 22px;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .push:hover, .ghost-btn:hover, .upload-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .primary:hover { filter: brightness(1.1); }
+    .push:active, .ghost-btn:active, .primary:active, .upload-btn:active { transform: translateY(1px); }
+    .upload-btn.dropping { border-color: var(--accent); background: var(--tint); }
+    .push:disabled, .primary:disabled, .upload-btn:disabled, .ghost-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    input[type="file"] { display: none; }
+
+    textarea, input[type="password"], input[type="number"] {
+      width: 100%;
+      border: 1px solid var(--line-2);
+      border-radius: 2px;
+      background: var(--field);
+      color: var(--ink);
+      font: inherit;
+      padding: 10px 12px;
+      outline: none;
+    }
+    textarea { min-height: 132px; resize: vertical; font-size: 1.02rem; line-height: 1.5; }
+    textarea:focus, input[type="password"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+    input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+    input[type="number"] { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86rem; padding: 7px 8px; }
+
+    /* 细线网格：相邻格子共用同一条 1px 边线，空位留白不塌陷 */
+    .quant-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+      gap: 0;
+    }
+    .quant-row > * {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      margin: -1px 0 0 -1px;
+      border: 1px solid var(--line-2);
+      background: var(--panel);
+      color: var(--dim);
+      padding: 9px 7px;
+      font: inherit;
+      font-size: 0.82rem;
+      text-align: center;
+      cursor: pointer;
+      border-radius: 0;
+    }
+    .quant-row > *:hover { color: var(--ink); background: var(--tint); }
+    .quant-row > .active,
+    .quant-row > *.active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .quant-row > *:disabled { opacity: 0.4; cursor: not-allowed; }
+    .quant-row label { cursor: pointer; }
+
+    .style-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0;
+    }
+    .style-card {
+      min-width: 0;
+      margin: -1px 0 0 -1px;
+      border: 1px solid var(--line-2);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 9px 10px;
+      text-align: left;
+      border-radius: 0;
+    }
+    .style-card strong, .style-card small { display: block; }
+    .style-card strong { font-size: 0.86rem; font-weight: 600; }
+    .style-card small { margin-top: 2px; color: var(--faint); font-size: 0.72rem; }
+    .style-card:hover { background: var(--tint); }
+    .style-card.active { box-shadow: inset 3px 0 0 var(--accent); background: var(--tint); }
+    .style-card:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0;
+    }
+    .swatch {
+      appearance: none;
+      width: 100%;
+      aspect-ratio: 1;
+      margin: -1px 0 0 -1px;
+      border: 1px solid var(--line-2);
+      padding: 0;
+      cursor: pointer;
+    }
+    .swatch.active { outline: 2px solid var(--ink); outline-offset: -3px; }
+
+    .slider { display: grid; gap: 4px; }
+    .slider-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .slider-head .field { margin: 0; }
+    .slider-val { font-size: 0.76rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .slider input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+
+    .two-col { display: grid; gap: 14px; }
+    @media (min-width: 520px) { .two-col { grid-template-columns: 1fr 1fr; } }
+
+    /* ---------- 屏幕预览 ---------- */
+    .preview-frame {
+      position: relative;
+      width: min(100%, 300px);
+      aspect-ratio: 480 / 720;
+      margin: 0 auto 8px;
+      border: 1px solid var(--line-2);
+      background: #15171a;
+      box-shadow: 4px 4px 0 var(--line);
+      overflow: hidden;
+      touch-action: none;
+      cursor: grab;
+    }
+    .preview-frame.dragging { cursor: grabbing; }
+    .preview-frame.has-img { background: #1a1a1a; }
+    canvas { display: block; width: 100%; height: 100%; image-rendering: auto; }
+    .pixel-inspect canvas { image-rendering: pixelated; }
+    .appearance-canvas {position:absolute;inset:0;pointer-events:none;image-rendering:auto;}
+    .update-outline { position: absolute; border: 2px dashed #e50076; pointer-events: none; }
+    .region-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .region-fields label { min-width: 0; font-size: 0.74rem; color: var(--faint); }
+    .region-fields input { display: block; width: 100%; min-width: 0; margin-top: 3px; }
+    .preview-tip {
+      margin: 0 0 16px;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--faint);
+      min-height: 1.2em;
+    }
+
+    /* ---------- 网络列表 ---------- */
+    .wifi-list {
+      display: grid;
+      gap: 1px;
+      background: var(--line-2);
+      border: 1px solid var(--line-2);
+    }
+    .wifi-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 0;
+      background: var(--field);
+      color: var(--ink);
+      font-size: 0.88rem;
+      text-align: left;
+    }
+    .wifi-item:hover { background: var(--tint); }
+    .wifi-item.active { box-shadow: inset 3px 0 0 var(--accent); background: var(--tint); }
+    .wifi-meta { color: var(--faint); font-size: 0.72rem; white-space: nowrap; }
+
+    /* ---------- 底部动作 ---------- */
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-top: 20px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .progress { position: relative; width: 100%; height: 3px; overflow: hidden; background: var(--line); }
+    .progress::after {
+      content: "";
+      display: block;
+      width: 36%;
+      height: 100%;
+      background: var(--accent);
+      animation: progress 1.15s ease-in-out infinite;
+    }
+    @keyframes progress {
+      from { transform: translateX(-110%); }
+      to { transform: translateX(290%); }
+    }
+
+    .foot {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 22px;
+      padding-top: 9px;
+      border-top: 1px solid var(--line);
+      font-size: 0.68rem;
+      color: var(--faint);
+    }
+
+    [v-cloak] {display:none;}
+    #app {width:min(100%,720px);padding:18px max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left));}
+    button {min-height:44px;}
+    button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible {outline:2px solid var(--accent);outline-offset:3px;}
+    button:disabled {cursor:not-allowed;opacity:.45;}
+    .tswatch {min-height:28px;width:28px;height:28px;}
+    .tabs {gap:4px;}
+    .tabs button {border-radius:6px 6px 0 0;}
+    .editor-layout,.editor-controls,.preview-pane {min-width:0;}
+    .editor-layout {display:grid;gap:20px;}
+    .preview-heading {display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 auto 12px;max-width:360px;font-size:.8rem;}
+    .preview-heading span {color:var(--faint);font-size:.72rem;}
+    .preview-frame {width:min(100%,320px);background:var(--field);box-shadow:0 2px 12px #0002;border-radius:4px;}
+    .preview-controls {display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:12px;margin:12px 0;}
+    .preview-controls label {display:flex;gap:6px;align-items:center;font-size:.78rem;color:var(--dim);}
+    .preview-controls span {font-size:.75rem;color:var(--faint);}
+    .preview-tip {max-width:360px;margin:10px auto 0;line-height:1.7;}
+    .preview-empty {position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;background:var(--field);color:var(--dim);pointer-events:none;}
+    .preview-empty span {font-size:.76rem;color:var(--faint);}
+    .preview-badge {position:absolute;left:10px;bottom:10px;padding:5px 9px;border-radius:4px;background:var(--panel);color:var(--ink);font-size:.75rem;pointer-events:none;}
+    .hint {line-height:1.7;overflow-wrap:anywhere;}
+    .mode-note {display:flex;gap:4px;flex-direction:column;border-left:3px solid var(--accent);padding:8px 12px;background:var(--tint);font-size:.86rem;border-radius:3px;}
+    .mode-note span {font-size:.75rem;color:var(--dim);}
+    .edit-group {border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;}
+    .edit-group>summary {display:flex;align-items:center;gap:12px;list-style:none;padding:13px 14px;font-size:.9rem;font-weight:600;cursor:pointer;}
+    .edit-group>summary::-webkit-details-marker {display:none;}
+    .edit-group>summary::after {content:'+';margin-left:auto;color:var(--accent);font-size:1rem;}
+    .edit-group[open]>summary::after {content:'−';}
+    .group-body {display:grid;gap:13px;padding:4px 14px 16px;}
+    .group-body>.field {margin:2px 0 -4px;color:var(--dim);font-weight:600;}
+    .group-body .hint {font-size:.76rem;}
+    .quant-row {gap:6px;}
+    .quant-row>* {margin:0;border-radius:5px;}
+    .style-grid {grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+    .style-card {margin:0;padding:10px 9px;border-radius:5px;}
+    .style-card strong {font-size:.8rem;}
+    .style-card small {font-size:.7rem;line-height:1.6;}
+    .style-card.active {border-color:var(--accent);}
+    .noise-preview {display:block;width:100%;aspect-ratio:2/3;object-fit:contain;background:var(--field);margin-top:8px;border-radius:4px;image-rendering:auto;}
+    .noise-compare {font-size:.76rem;color:var(--dim);}
+    .noise-compare>summary {cursor:pointer;padding:8px 0;}
+    .noise-compare .style-card {padding:6px;}
+    .noise-placeholder {display:grid;place-items:center;aspect-ratio:2/3;color:var(--faint);font-size:.7rem;}
+    .region-fields {grid-template-columns:repeat(4,minmax(0,1fr));}
+    .actions {position:sticky;bottom:0;z-index:2;background:var(--bg);padding:12px 0 max(12px,env(safe-area-inset-bottom));margin-top:20px;gap:8px;}
+    .actions .primary {flex:1;}
+    .actions .status {width:100%;}
+    .actions .progress {height:3px;}
+    .foot {margin-top:12px;}
+    @media(max-width:479px){
+      #app {padding-top:12px;}
+      .preview-frame {width:min(100%,280px);}
+      .group-body {padding:2px 11px 14px;gap:12px;}
+      .style-card {padding:9px 7px;}
+      .style-card small {font-size:.68rem;}
+      .two-col {grid-template-columns:1fr 1fr;gap:12px;}
+      .wifi-item {flex-wrap:wrap;gap:4px;}
+      .picker-key,.picker-name {font-size:.68rem;}
+    }
+    @media(min-width:768px){
+      #app {width:min(100%,1100px);padding:24px;}
+      .app-body {max-width:720px;margin:0 auto;}
+      .app-body.editing {max-width:none;}
+      .editor-layout {grid-template-columns:minmax(260px,.9fr) minmax(360px,1.1fr);gap:28px;align-items:start;}
+      .preview-pane {position:sticky;top:20px;}
+      .preview-frame {width:min(100%,calc((100dvh - 240px)*2/3),400px);min-width:220px;}
+      .actions {margin-left:calc((100% - 28px)*.45 + 28px);}
+    }
+    @media(prefers-reduced-motion:reduce){.progress::after {animation:none;transform:none;width:100%;}}
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <div class="app-body" :class="{ editing: tab === 'image' || tab === 'text' }">
+    <div class="hdr">
+      <div>
+        <h1 class="brand">Eink E6 3.7</h1>
+        <div class="spec">480×720 · 六色墨水屏</div>
+      </div>
+      <div class="link" :class="{ on: deviceOnline }">
+        <span class="dot"></span>{{ deviceOnline ? '已连接' : '未连接' }}
+      </div>
+    </div>
+
+    <div class="picker">
+      <span class="picker-key">配色</span>
+      <button
+        v-for="t in themes" :key="t.id"
+        class="tswatch" type="button"
+        :class="{ active: theme === t.id }"
+        :style="{ background: t.bg, borderColor: t.accent }"
+        :title="t.name" :aria-label="'配色：' + t.name"
+        @click="setTheme(t.id)"
+      ><i :style="{ background: t.accent }"></i></button>
+      <span class="picker-name">{{ themeName }}</span>
+    </div>
+
+    <div class="meta" v-show="tab === 'wifi'">
+      <div class="meta-row">
+        <span class="meta-key">模式</span>
+        <span class="meta-val">{{ wifiMode === 'sta' ? '局域网' : '设备热点' }}</span>
+      </div>
+      <div class="meta-row" v-if="wifiMode === 'sta'">
+        <span class="meta-key">网络</span>
+        <span class="meta-val mono">{{ wifiSsid }}</span>
+      </div>
+      <div class="meta-row" v-if="wifiMode === 'sta'">
+        <span class="meta-key">地址</span>
+        <span class="meta-val mono">{{ wifiUrl }}</span>
+      </div>
+      <div class="meta-row" v-else>
+        <span class="meta-key">配网</span>
+        <span class="meta-val">选一个 Wi-Fi 填密码；连上后手机改连该网络，再扫屏幕上的二维码回到本页。</span>
+      </div>
+    </div>
+
+    <nav class="tabs" aria-label="主要功能">
+      <button type="button" :class="{ active: tab === 'wifi' }" :disabled="busy" @click="switchTab('wifi')">网络</button>
+      <button type="button" :class="{ active: tab === 'text' }" :disabled="busy" @click="switchTab('text')">文本</button>
+      <button type="button" :class="{ active: tab === 'image' }" :disabled="busy" @click="switchTab('image')">图片</button>
+      <button type="button" :class="{ active: tab === 'settings' }" :disabled="busy" @click="switchTab('settings')">设置</button>
+    </nav>
+
+    <div v-show="tab === 'wifi'" class="panel">
+      <button class="push" type="button" :disabled="wifiBusy" @click="scanWifi">
+        {{ wifiBusy ? '扫描中' : '扫描 Wi-Fi' }}
+      </button>
+      <div class="wifi-list" v-if="wifiList.length">
+        <button
+          v-for="ap in wifiList" :key="ap.ssid"
+          class="wifi-item" type="button"
+          :class="{ active: selectedSsid === ap.ssid }" :disabled="wifiBusy"
+          @click="selectWifi(ap.ssid)"
+        >
+          <span>{{ ap.ssid }}</span>
+          <span class="wifi-meta">{{ ap.band }} · {{ ap.rssi }} dBm</span>
+        </button>
+      </div>
+      <input
+        v-if="selectedSsid"
+        class="wifi-pass"
+        type="password"
+        v-model="wifiPass"
+        :disabled="wifiBusy" autocomplete="off" :aria-label="selectedSsid + ' 的 Wi-Fi 密码'"
+        placeholder="密码，开放网络留空"
+      />
+      <button
+        v-if="selectedSsid"
+        class="push"
+        type="button"
+        :disabled="wifiBusy"
+        @click="connectWifi"
+      >连接</button>
+      <p class="status" :class="wifiStatusClass" role="status" aria-live="polite">{{ wifiStatus }}</p>
+    </div>
+
+    <div v-show="tab === 'settings'" class="panel">
+      <div class="field">充电档位</div>
+      <label>电池额定容量（mAh）<input type="number" min="500" max="10000" step="1" v-model.number="chargeCapacity" @input="chargeDirty = true" :disabled="chargeBusy || !chargeReady" /></label>
+      <button class="push" type="button" :disabled="chargeBusy || !chargeReady" @click="setChargePower(chargePower)">保存充电设置</button>
+      <p class="hint">{{ chargeDetail }}</p>
+      <p class="hint">{{ gaugeDetail }}</p>
+      <p class="hint">按电池额定容量计算倍率；实际恒流设定向下取芯片支持档位，最高 1000 mA。容量和模式保存到本机。涓流档为低速模式，不改变芯片低压预充。</p>
+      <div class="style-grid">
+        <button
+          v-for="p in chargeLevels" :key="p.id"
+          class="style-card" type="button"
+          :class="{ active: chargePower === p.id }"
+          :disabled="chargeBusy || !chargeReady"
+          @click="setChargePower(p.id)"
+        >
+          <strong>{{ p.label }}</strong>
+          <small>{{ p.note }}</small>
+        </button>
+      </div>
+      <p class="status" :class="chargeStatusClass" role="status" aria-live="polite">{{ chargeStatus }}</p>
+
+    </div>
+
+    <div v-show="tab === 'text' || tab === 'image'" class="editor-layout">
+      <section class="preview-pane" aria-label="屏幕预览">
+        <div class="preview-heading"><strong>屏幕预览</strong><span>480 × 720</span></div>
+        <div class="preview-frame" :class="{ dragging, 'has-img': imageEl, 'pixel-inspect': previewPixels }"
+             @pointerdown="onPanStart" @pointermove="onPanMove" @pointerup="onPanEnd"
+             @pointercancel="onPanEnd" @lostpointercapture="onPanEnd">
+          <canvas ref="canvas" width="480" height="720" aria-label="六色画面预览"></canvas>
+          <canvas v-show="tab === 'image' && imageEl && !previewPixels && !dragging" ref="appearanceCanvas"
+                  class="appearance-canvas" width="240" height="360" aria-hidden="true"></canvas>
+          <div v-if="tab === 'image' && !imageEl" class="preview-empty"><strong>选择一张图片</strong><span>拖入、粘贴或点击按钮载入</span></div>
+          <div v-if="tab === 'image' && imageEl && regionUpdate" class="update-outline"
+               :style="{ left:updateRect.x/480*100+'%', top:updateRect.y/720*100+'%', width:updateRect.width/480*100+'%', height:updateRect.height/720*100+'%' }"></div>
+          <span v-if="tab === 'image' && previewBusy" class="preview-badge" role="status">正在生成预览…</span>
+        </div>
+        <div v-if="tab === 'image' && imageEl" class="preview-controls">
+          <label><input type="checkbox" v-model="previewPixels" />查看抖动像素</label><span>{{ usedColors }} / 6 色</span>
+        </div>
+        <p class="preview-tip">{{ tab === 'text' ? '预览仅供参考，实屏颜色受环境光影响。' : imageEl ? '拖动调整取景 · 滚轮缩放 · 实屏颜色受环境光影响' : '图片在本地浏览器处理，发送时仅上传六色点阵。' }}</p>
+      </section>
+      <section class="editor-controls" aria-label="画面编辑">
+    <div v-show="tab === 'text'" class="panel" :inert="busy">
+      <div>
+        <label class="field" for="text">文本</label>
+        <textarea id="text" v-model="text" placeholder="输入要显示的文字" @input="renderText"></textarea>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="field">背景</div>
+          <div class="swatches">
+            <button
+              v-for="c in colors" :key="'bg-'+c.id"
+              class="swatch" type="button"
+              :class="{ active: bg === c.id }"
+              :style="{ background: c.css }"
+              :aria-label="'背景：' + c.name" :aria-pressed="bg === c.id" @click="bg = c.id; renderText()"
+            ></button>
+          </div>
+        </div>
+        <div>
+          <div class="field">字色</div>
+          <div class="swatches">
+            <button
+              v-for="c in colors" :key="'fg-'+c.id"
+              class="swatch" type="button"
+              :class="{ active: fg === c.id }"
+              :style="{ background: c.css }"
+              :aria-label="'文字：' + c.name" :aria-pressed="fg === c.id" @click="fg = c.id; renderText()"
+            ></button>
+          </div>
+        </div>
+      </div>
+      <div class="slider">
+        <div class="slider-head">
+          <span class="field">字号</span>
+          <span class="slider-val">{{ fontSize }} px</span>
+        </div>
+        <input type="range" min="18" max="96" step="2" v-model.number="fontSize" @input="renderText" />
+      </div>
+    </div>
+
+    <!-- 图片 -->
+    <div v-show="tab === 'image'" class="panel" :inert="busy">
+      <input ref="fileInput" type="file" accept="image/*" @change="onFileChange" />
+      <button class="upload-btn" :class="{ dropping: draggingFile }" type="button" :disabled="busy"
+              @click="fileInput.click()" @dragover.prevent="draggingFile = true"
+              @dragleave.prevent="draggingFile = false" @drop.prevent="onDrop">
+        {{ draggingFile ? '松开载入' : (imageEl ? '更换图片' : '选择图片 · 可拖入或粘贴') }}
+      </button>
+      <p v-if="imageName" class="img-meta">{{ imageName }} · {{ imgW }}×{{ imgH }}</p>
+      <p class="hint">自动裁剪为屏幕比例，可拖动预览调整取景。</p>
+
+        <div class="mode-note"><strong>六色抖动</strong><span>黑、白、黄、红、蓝、绿 · 全屏刷新</span></div>
+      <template v-if="imageEl">
+        <details class="edit-group" open><summary>取景与旋转</summary><div class="group-body">
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">缩放</span>
+            <span class="slider-val">{{ zoom.toFixed(2) }}×</span>
+          </div>
+          <input type="range" min="1" max="4" step="0.01" v-model.number="zoom" @input="onCropChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">水平</span>
+            <span class="slider-val">{{ Math.round(panX * 100) }}%</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.001" v-model.number="panX" @input="onCropChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">垂直</span>
+            <span class="slider-val">{{ Math.round(panY * 100) }}%</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.001" v-model.number="panY" @input="onCropChange" />
+        </div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+          <button class="ghost-btn" type="button" :disabled="busy" @click="rotateImage(-90)">左转90°</button>
+          <button class="ghost-btn" type="button" :disabled="busy" @click="rotateImage(90)">右转90°</button>
+          <span>{{ imageRotation }}°</span>
+          <button class="ghost-btn" type="button" @click="resetCrop">重置取景</button>
+        </div>
+
+        </div></details>
+        <details class="edit-group" open><summary>六色混色与风格</summary><div class="group-body">
+        <div class="field">颜色</div>
+        <div class="quant-row">
+          <button type="button" :class="{ active: quant === 'gray' }" @click="setQuant('gray')">灰度</button>
+          <button type="button" :class="{ active: quant === 'color' }" @click="setQuant('color')">彩色</button>
+        </div>
+
+        <div class="field">图像风格</div>
+        <div class="style-grid">
+          <button v-for="s in renderStyles" :key="s.id" class="style-card" type="button"
+                  :class="{ active: renderStyle === s.id }" @click="setRenderStyle(s.id)">
+            <strong>{{ s.name }}</strong><small>{{ s.note }}</small>
+          </button>
+        </div>
+
+        <div class="field">混色细节</div>
+        <p class="hint">用六种墨色的疏密表现更多层次，可先对照预览再发送。</p>
+        <div class="style-grid">
+          <button v-for="m in ditherModes" :key="m.id" class="style-card" type="button"
+                  :class="{ active: ditherQuality === m.id }" @click="setDitherQuality(m.id)">
+            <strong>{{ m.name }}</strong><small>{{ m.note }}</small>
+          </button>
+        </div>
+
+        <template v-if="renderStyle !== 'flat'">
+          <div class="field">六色降噪</div>
+          <div class="style-grid">
+            <button v-for="m in sixDenoiseModes" :key="m.id" class="style-card" type="button" :disabled="busy"
+                    :class="{active:sixDenoise===m.id}" @click="setSixDenoise(m.id)">
+              <strong>{{ m.name }}</strong><small>{{ m.note }}</small>
+            </button>
+          </div>
+          <p class="hint">降噪会平滑细碎杂色；抖动颗粒用于混色，仍会保留。</p>
+          <details class="noise-compare" @toggle="onNoiseCompareToggle">
+            <summary>展开降噪效果对照</summary>
+            <div class="style-grid">
+              <button v-for="m in sixDenoiseModes" :key="m.id" class="style-card" type="button" :disabled="busy" :class="{active:sixDenoise===m.id}" @click="setSixDenoise(m.id)">
+                <strong>{{ m.name }}</strong>
+                <img v-if="noisePreviews[m.id]" class="noise-preview" :src="noisePreviews[m.id]" :alt="m.name+'效果预览'"/>
+                <span v-else class="noise-placeholder">{{ noisePreviewBusy?'更新中…':'等待预览' }}</span>
+              </button>
+            </div>
+          </details>
+        </template>
+        </div></details>
+        <details class="edit-group"><summary>明暗与颜色</summary><div class="group-body">
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">曝光</span>
+            <span class="slider-val">{{ exposure > 0 ? '+' : '' }}{{ exposure }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="exposure" @input="onAdjustChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">亮度</span>
+            <span class="slider-val">{{ brightness > 0 ? '+' : '' }}{{ brightness }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="brightness" @input="onAdjustChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">对比度</span>
+            <span class="slider-val">{{ contrast > 0 ? '+' : '' }}{{ contrast }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="contrast" @input="onAdjustChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">高光</span>
+            <span class="slider-val">{{ highlights > 0 ? '+' : '' }}{{ highlights }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="highlights" @input="onAdjustChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">阴影</span>
+            <span class="slider-val">{{ shadows > 0 ? '+' : '' }}{{ shadows }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="shadows" @input="onAdjustChange" />
+        </div>
+        <div class="slider">
+          <div class="slider-head">
+            <span class="field">饱和度</span>
+            <span class="slider-val">{{ saturation > 0 ? '+' : '' }}{{ saturation }}</span>
+          </div>
+          <input type="range" min="-100" max="100" step="1" v-model.number="saturation" @input="onAdjustChange" />
+        </div>
+        <div>
+          <button class="ghost-btn" type="button" @click="resetAdjust">重置调整</button>
+        </div>
+
+        </div></details>
+        <details class="edit-group"><summary>区域替换与重复发送</summary><div class="group-body">
+        <div class="quant-row">
+          <label><input type="checkbox" :checked="regionUpdate" :disabled="!canRegionUpdate" @change="setRegionUpdate($event.target.checked)" />区域替换</label>
+          <label><input type="checkbox" v-model="forceRefresh" />强制刷新</label>
+        </div>
+        <div v-if="regionUpdate" class="region-fields">
+          <label>X<input type="number" min="0" max="479" step="1" v-model.number="updateRect.x" @input="onCropChange" /></label>
+          <label>Y<input type="number" min="0" max="719" step="1" v-model.number="updateRect.y" @input="onCropChange" /></label>
+          <label>宽<input type="number" min="1" :max="480-updateRect.x" step="1" v-model.number="updateRect.width" @input="onCropChange" /></label>
+          <label>高<input type="number" min="1" :max="720-updateRect.y" step="1" v-model.number="updateRect.height" @input="onCropChange" /></label>
+        </div>
+        <p class="hint">{{ regionUpdate ? '仅替换框内内容，屏幕仍执行完整刷新。' : canRegionUpdate ? '可在上次成功发送的画面上替换指定区域。' : '完整发送一次画面后，可启用区域替换。' }}</p>
+
+        </div></details>
+      </template>
+    </div>
+
+    </section>
+    </div>
+    <div v-show="tab === 'text' || tab === 'image'" class="actions">
+      <button class="primary" type="button" :disabled="busy || (tab === 'image' && !imageEl)" @click="push">
+        {{ busyLabel }}
+      </button>
+      <button class="ghost-btn" v-if="tab === 'image'" type="button" :disabled="busy" @click="clearDisplay">清空屏幕</button>
+      <div class="status" :class="statusClass" role="status" aria-live="polite">{{ status }}</div>
+      <div v-if="busy" class="progress" aria-label="屏幕正在刷新"></div>
+    </div>
+
+    <div class="foot">
+      <span>E6 3.7</span>
+      <span>图片在浏览器中处理</span>
+    </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed, nextTick } = Vue;
+
+    const Pipeline = window.EinkPipeline;
+    const PANEL_W = Pipeline.WIDTH, PANEL_H = Pipeline.HEIGHT;
+    const COLORS = Pipeline.COLORS;
+    const cssOf = (id) => COLORS.find(c => c.id === id).css;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    const fetchJson = async (url, options = {}, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        const info = await res.json();
+        if (!res.ok || info.ok === false) throw new Error(info.message || `HTTP ${res.status}`);
+        return info;
+      } finally { clearTimeout(timer); }
+    };
+
+    const applyAdjust = (data, { exposure, brightness, contrast, highlights, shadows, saturation }) => {
+      const exp = Math.pow(2, exposure / 50);
+      const bri = brightness * 1.2;
+      const con = (contrast + 100) / 100;
+      const sat = (saturation + 100) / 100;
+      const hi = highlights / 100;
+      const sh = shadows / 100;
+      for (let i = 0; i < data.length; i += 4) {
+        let r = data[i], g = data[i + 1], b = data[i + 2];
+        r *= exp; g *= exp; b *= exp;
+        r = (r - 128) * con + 128 + bri;
+        g = (g - 128) * con + 128 + bri;
+        b = (b - 128) * con + 128 + bri;
+        let y = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (y > 128 && hi !== 0) {
+          const t = (y - 128) / 127;
+          const k = 1 - hi * t * 0.85;
+          r = 128 + (r - 128) * k;
+          g = 128 + (g - 128) * k;
+          b = 128 + (b - 128) * k;
+          y = 0.299 * r + 0.587 * g + 0.114 * b;
+        }
+        if (y < 128 && sh !== 0) {
+          const t = (128 - y) / 128;
+          const lift = sh * t * 55;
+          r += lift; g += lift; b += lift;
+          y = 0.299 * r + 0.587 * g + 0.114 * b;
+        }
+        r = y + (r - y) * sat;
+        g = y + (g - y) * sat;
+        b = y + (b - y) * sat;
+        data[i] = clamp(r, 0, 255);
+        data[i + 1] = clamp(g, 0, 255);
+        data[i + 2] = clamp(b, 0, 255);
+      }
+    };
+
+    createApp({
+      setup() {
+        const tab = ref('wifi');
+        const wifiMode = ref('ap');
+        const wifiSsid = ref('');
+        const wifiUrl = ref('http://192.168.4.1');
+        const wifiList = ref([]);
+        const selectedSsid = ref('');
+        const wifiPass = ref('');
+        const wifiBusy = ref(false);
+        const wifiStatus = ref('');
+        const wifiStatusClass = ref('');
+        const chargePower = ref('balanced');
+        const chargeCapacity = ref(500);
+        const chargeDirty = ref(false);
+        const chargeReady = ref(false);
+        const chargeDetail = ref('正在读取充电配置');
+        const gaugeDetail = ref('');
+        const applyChargeInfo = (info, saved = false) => {
+          chargePower.value = info.charge;
+          if (!chargeDirty.value || saved) chargeCapacity.value = info.capacity_mah;
+          if (saved) chargeDirty.value = false;
+          chargeReady.value = true;
+          chargeDetail.value = info.capacity_mah + 'mAh：目标 ' + info.target_ma + 'mA，恒流设定 ' + info.icc_ma + 'mA（非实测）';
+          gaugeDetail.value = !info.gauge_read_ok ? '电量计读取失败' : !info.battery_present ? '未检测到电池' :
+            '电量计' + (info.gauge_enabled ? '已启用' : '未启用') + '，SOC ' + (info.soc >= 0 ? info.soc + '%' : '无效') + '；内部自动学习，无可读完成度。';
+        };
+        const chargeBusy = ref(false);
+        const chargeStatus = ref('');
+        const chargeStatusClass = ref('');
+        const chargeLevels = [
+          { id: 'slow', label: '涓流充电', note: '0.2C' },
+          { id: 'balanced', label: '正常充电', note: '0.5C · 默认档' },
+          { id: 'fast', label: '快速充电', note: '1.0C' },
+        ];
+        const text = ref('你好，Eink');
+        const bg = ref(0x1);
+        const fg = ref(0x0);
+        const fontSize = ref(42);
+        const busy = ref(false);
+        const status = ref('');
+        const phase = ref('idle');
+        const deviceOnline = ref(false);
+        const quant = ref('color');
+        const lastPanelFrame = ref(null), regionUpdate = ref(false), forceRefresh = ref(false);
+        const updateRect = ref({x:0, y:0, width:PANEL_W, height:PANEL_H});
+        const canRegionUpdate = computed(() => !!lastPanelFrame.value);
+        const ditherQuality = ref('best');
+        const ditherModes = [
+          { id: 'fast', name: '轻度', note: '轻度扩散' },
+          { id: 'standard', name: '标准', note: '标准扩散' },
+          { id: 'best', name: '精细', note: '完整扩散 · 保留层次' },
+        ];
+        const previewPixels=ref(false), noisePreviews=ref({}), noisePreviewBusy=ref(false), noiseCompareOpen=ref(false);
+        const sixDenoise = ref('balanced');
+        const sixDenoiseModes = [
+          {id:'off',name:'关闭',note:'保留原始六色抖动'},
+          {id:'balanced',name:'标准降噪',note:'保护灰色 · 平滑细碎杂点'},
+          {id:'strong',name:'较强降噪',note:'减少暗部杂色 · 弱色彩会变淡'},
+        ];
+        const renderStyle = ref('illustration');
+        const renderStyles = [
+          { id: 'photo', name: '柔和照片', note: '平滑明暗' },
+          { id: 'illustration', name: '清晰插画', note: '保留色彩细节' },
+          { id: 'flat', name: '纯色图形', note: '适合图标与文字 · 六色直取' },
+        ];
+        const imageName = ref('');
+        const imageEl = ref(null);
+        const imageRotation = ref(0);
+        const imgW = ref(0);
+        const imgH = ref(0);
+        const canvas = ref(null), appearanceCanvas = ref(null);
+        const fileInput = ref(null);
+        const colors = COLORS;
+        const previewBusy = ref(false);
+        const usedColors = ref(0);
+        const draggingFile = ref(false);
+
+        const zoom = ref(1);
+        const panX = ref(0.5);
+        const panY = ref(0.5);
+        const exposure = ref(0);
+        const brightness = ref(0);
+        const contrast = ref(0);
+        const highlights = ref(0);
+        const shadows = ref(0);
+        const saturation = ref(0);
+
+        const dragging = ref(false);
+        let panStart = null;
+        let ditherTimer = null;
+        let cropAnimation = null;
+        let previewRevision = 0;
+        let imageRevision = 0;
+
+        /* 配色只记在浏览器里，不写设备也不进任何接口。 */
+        const themes = [
+          { id: 'paper', name: '纸面', bg: '#e7e7e4', accent: '#1f4b78' },
+          { id: 'mono', name: '黑白', bg: '#ffffff', accent: '#111111' },
+          { id: 'graphite', name: '石墨', bg: '#17181a', accent: '#8fb8d8' },
+          { id: 'amber', name: '琥珀', bg: '#16130d', accent: '#e8a33d' },
+          { id: 'blueprint', name: '蓝图', bg: '#0d1622', accent: '#4ea3e0' },
+        ];
+        const theme = ref('paper');
+        const themeName = computed(() => (themes.find(t => t.id === theme.value) || themes[0]).name);
+        const applyTheme = (id) => {
+          const item = themes.find(t => t.id === id) || themes[0];
+          const root = document.documentElement;
+          if (root && root.setAttribute) root.setAttribute('data-theme', item.id);
+          const meta = document.querySelector && document.querySelector('meta[name="theme-color"]');
+          if (meta && meta.setAttribute) meta.setAttribute('content', item.bg);
+        };
+        const setTheme = (id) => {
+          if (!themes.some(t => t.id === id)) return;
+          theme.value = id;
+          applyTheme(id);
+          try { localStorage.setItem('eink.ui.theme.v1', id); } catch (_) {}
+        };
+        const restoreTheme = () => {
+          let saved = '';
+          try { saved = localStorage.getItem('eink.ui.theme.v1') || ''; } catch (_) {}
+          if (!themes.some(t => t.id === saved)) {
+            const media = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+            saved = media && media.matches ? 'graphite' : 'paper';
+          }
+          setTheme(saved);
+        };
+
+        const statusClass = computed(() => {
+          if (phase.value === 'error') return 'err';
+          if (phase.value === 'done') return 'ok';
+          return '';
+        });
+        const busyLabel = computed(() => {
+          if (!busy.value) return regionUpdate.value ? '发送区域替换画面' : '发送到屏幕';
+          return phase.value === 'prepare' ? '生成点阵' : '屏幕刷新中';
+        });
+
+        const wrapLines = (ctx, content, maxWidth) => {
+          const lines = [];
+          for (const para of String(content || '').split(/\n/)) {
+            if (!para) { lines.push(''); continue; }
+            let line = '';
+            for (const ch of para) {
+              const trial = line + ch;
+              if (ctx.measureText(trial).width > maxWidth && line) {
+                lines.push(line);
+                line = ch;
+              } else line = trial;
+            }
+            lines.push(line);
+          }
+          return lines;
+        };
+
+        const rotatedSize = (img) => {
+          const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          return imageRotation.value % 180 ? { w: h, h: w } : { w, h };
+        };
+        const rotateImage = (delta) => {
+          if (busy.value || !imageEl.value) return;
+          imageRotation.value = (imageRotation.value + delta + 360) % 360;
+          resetCrop();
+        };
+        const cropRect = () => {
+          const img = imageEl.value;
+          if (!img) return null;
+          const { w: iw, h: ih } = rotatedSize(img);
+          const targetAspect = PANEL_W / PANEL_H;
+          let baseW, baseH;
+          if (iw / ih > targetAspect) {
+            baseH = ih;
+            baseW = ih * targetAspect;
+          } else {
+            baseW = iw;
+            baseH = iw / targetAspect;
+          }
+          const sw = baseW / zoom.value;
+          const sh = baseH / zoom.value;
+          const maxX = Math.max(0, iw - sw);
+          const maxY = Math.max(0, ih - sh);
+          return {
+            sx: panX.value * maxX,
+            sy: panY.value * maxY,
+            sw,
+            sh,
+          };
+        };
+
+        const renderText = () => {
+          const el = canvas.value;
+          if (!el) return;
+          const ctx = el.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = cssOf(bg.value);
+          ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+          ctx.fillStyle = cssOf(fg.value);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `600 ${fontSize.value}px "Songti SC","Noto Serif SC","PingFang SC","Microsoft YaHei",serif`;
+          const lines = wrapLines(ctx, text.value, PANEL_W - 56);
+          const lineH = fontSize.value * 1.25;
+          let y = (PANEL_H - lines.length * lineH) / 2 + lineH / 2;
+          for (const line of lines) {
+            ctx.fillText(line, PANEL_W / 2, y);
+            y += lineH;
+          }
+        };
+
+        /* 拖动时实时显示原图取景；松手后生成同一裁剪范围的屏幕配色。 */
+        const scratch = document.createElement('canvas');
+        scratch.width = PANEL_W;
+        scratch.height = PANEL_H;
+
+        const grabCrop = (drawOnly = false) => {
+          const img = imageEl.value;
+          const rect = cropRect();
+          if (!img || !rect) return null;
+          const ctx = scratch.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          if (imageRotation.value === 0) {
+            ctx.drawImage(img, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, PANEL_W, PANEL_H);
+          } else {
+              ctx.save();
+              ctx.scale(PANEL_W / rect.sw, PANEL_H / rect.sh);
+              ctx.translate(-rect.sx, -rect.sy);
+              const size = rotatedSize(img);
+              ctx.translate(size.w / 2, size.h / 2);
+              ctx.rotate(imageRotation.value * Math.PI / 180);
+              ctx.drawImage(img, -(img.naturalWidth || img.width) / 2, -(img.naturalHeight || img.height) / 2);
+              ctx.restore();
+          }
+          if (drawOnly) return scratch;
+          const imgData = ctx.getImageData(0, 0, PANEL_W, PANEL_H);
+          applyAdjust(imgData.data, {
+            exposure: exposure.value,
+            brightness: brightness.value,
+            contrast: contrast.value,
+            highlights: highlights.value,
+            shadows: shadows.value,
+            saturation: saturation.value,
+          });
+          return imgData;
+        };
+
+        const paintPanelPreview = (ids, preview) => {
+          const el = canvas.value;
+          if (!el) return;
+          usedColors.value = new Set(ids).size;
+          el.getContext('2d').putImageData(new ImageData(preview, PANEL_W, PANEL_H), 0, 0);
+          if(appearanceCanvas.value){const ctx=appearanceCanvas.value.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(el,0,0,240,360);}
+        };
+
+        // Generate all cards from the same crop/options; never replace transmitted IDs.
+        const refreshNoisePreviews = async (data, current, revision, options) => {
+          if(!noiseCompareOpen.value || options.style==='flat')return;
+          const full=document.createElement('canvas'),small=document.createElement('canvas');
+          if(typeof small.toDataURL!=='function')return;
+          full.width=PANEL_W;full.height=PANEL_H;small.width=144;small.height=216;
+          noisePreviewBusy.value=true;
+          const previews={};
+          try {
+            for(const mode of sixDenoiseModes) {
+              if(revision!==previewRevision || !noiseCompareOpen.value)return;
+              const result=mode.id===options.denoise?current:await Pipeline.quantizeAsync(data,{...options,denoise:mode.id,canceled:()=>revision!==previewRevision || !noiseCompareOpen.value});
+              if(revision!==previewRevision || !noiseCompareOpen.value)return;
+              full.getContext('2d').putImageData(new ImageData(result.preview,PANEL_W,PANEL_H),0,0);
+              const ctx=small.getContext('2d');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+              ctx.drawImage(full,0,0,144,216);previews[mode.id]=small.toDataURL('image/png');
+              noisePreviews.value={...previews};
+            }
+          } catch(e) {if(e.name!=='AbortError')console.warn('降噪对照预览未完成',e);}
+          finally {if(revision===previewRevision)noisePreviewBusy.value=false;}
+        };
+
+        const renderImageDithered = async () => {
+          const revision = ++previewRevision;
+          previewBusy.value = true;
+          try {
+            const imgData = grabCrop();
+            if (!imgData) throw new Error('没有可处理的图像');
+            const options = {
+              gray: quant.value === 'gray', quality: ditherQuality.value, style: renderStyle.value,
+              denoise: sixDenoise.value,
+              canceled: () => revision !== previewRevision,
+            };
+            const result = await Pipeline.quantizeAsync(imgData.data, options);
+            if (revision !== previewRevision) return null;
+            if (regionUpdate.value) {
+              if (!canRegionUpdate.value) throw new Error('请先完整发送一次画面，再使用区域替换');
+              const ids = Pipeline.composeRegion(lastPanelFrame.value.ids, result.ids, updateRect.value);
+              paintPanelPreview(ids, Pipeline.previewIds(ids));
+              return ids;
+            }
+            paintPanelPreview(result.ids, result.preview);
+            if(!busy.value)void refreshNoisePreviews(imgData.data,result,revision,options);
+            return result.ids;
+          } catch (e) {
+            if (e.name === 'AbortError') return null;
+              throw e;
+          } finally {
+            if (revision === previewRevision) previewBusy.value = false;
+          }
+        };
+
+        const paintLiveCrop = () => {
+          if(cropAnimation !== null)return;
+          cropAnimation=requestAnimationFrame(() => {
+            cropAnimation=null;
+            if(!dragging.value || busy.value || tab.value!=='image' || !imageEl.value || !canvas.value)return;
+            const crop=grabCrop(true);
+            if(crop)canvas.value.getContext('2d').drawImage(crop,0,0);
+          });
+        };
+
+        const scheduleDither = () => {
+          if (busy.value) return;
+          ++previewRevision;
+          noisePreviews.value={};noisePreviewBusy.value=false;
+          clearTimeout(ditherTimer);
+          previewBusy.value = !!imageEl.value;
+          if (!imageEl.value) return;
+          if(dragging.value) {paintLiveCrop();return;}
+          ditherTimer = setTimeout(() => {
+            renderImageDithered().catch(e => {
+              phase.value = 'error';
+              status.value = '预览失败：' + e.message;
+            });
+          }, 90);
+        };
+
+        const onCropChange = () => {
+          if(regionUpdate.value) {
+            const rect=updateRect.value;
+            const number=(value,fallback)=>Number.isFinite(Number(value))?Math.floor(Number(value)):fallback;
+            const x=clamp(number(rect.x,0),0,PANEL_W-1),y=clamp(number(rect.y,0),0,PANEL_H-1);
+            updateRect.value={x,y,width:clamp(number(rect.width,1),1,PANEL_W-x),height:clamp(number(rect.height,1),1,PANEL_H-y)};
+          }
+          scheduleDither();
+        };
+        const onAdjustChange = () => scheduleDither();
+
+        const setRegionUpdate = enabled => {
+          if (busy.value || enabled && !canRegionUpdate.value) return;
+          regionUpdate.value = enabled;
+          scheduleDither();
+        };
+
+        const setQuant = (q) => {
+          if (busy.value || !['gray','color'].includes(q)) return;
+          quant.value = q;
+          if (imageEl.value) scheduleDither();
+        };
+
+        const setDitherQuality = (mode) => {
+          if (busy.value || !ditherModes.some(m=>m.id===mode)) return;
+          ditherQuality.value = mode;
+          if (imageEl.value) scheduleDither();
+        };
+
+        const onNoiseCompareToggle = event => {
+          noiseCompareOpen.value=event.target.open;
+          if(noiseCompareOpen.value && imageEl.value)scheduleDither();
+          else {noisePreviews.value={};noisePreviewBusy.value=false;}
+        };
+
+        const setSixDenoise = (mode) => {
+          if(busy.value || !sixDenoiseModes.some(m=>m.id===mode))return;
+          sixDenoise.value=mode;
+          if(imageEl.value)scheduleDither();
+        };
+
+        const setRenderStyle = (style) => {
+          if (busy.value || !renderStyles.some(s=>s.id===style)) return;
+          renderStyle.value = style;
+          if (imageEl.value) scheduleDither();
+        };
+
+        const resetCrop = () => {
+          zoom.value = 1;
+          panX.value = 0.5;
+          panY.value = 0.5;
+          scheduleDither();
+        };
+
+        const resetAdjust = () => {
+          exposure.value = 0;
+          brightness.value = 0;
+          contrast.value = 0;
+          highlights.value = 0;
+          shadows.value = 0;
+          saturation.value = 0;
+          scheduleDither();
+        };
+
+        const switchTab = (t) => {
+          if (busy.value) return;
+          regionUpdate.value = false;
+          ++previewRevision;
+          clearTimeout(ditherTimer);
+          previewBusy.value = false;
+          tab.value = t;
+          nextTick(() => {
+            if (t === 'text') renderText();
+            else if (t === 'image' && imageEl.value) scheduleDither();
+            else {
+              const el = canvas.value;
+              if (!el) return;
+              const ctx = el.getContext('2d');
+              ctx.fillStyle = cssOf(1);
+              ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+            }
+          });
+        };
+
+        const onPanStart = (ev) => {
+          if (busy.value || tab.value !== 'image' || !imageEl.value) return;
+          dragging.value = true;
+          panStart = {
+            x: ev.clientX,
+            y: ev.clientY,
+            panX: panX.value,
+            panY: panY.value,
+          };
+          ev.currentTarget.setPointerCapture?.(ev.pointerId);
+          scheduleDither();
+        };
+
+        const onPanMove = (ev) => {
+          if (busy.value || !dragging.value || !panStart || !imageEl.value) return;
+          const el = ev.currentTarget;
+          const rect = el.getBoundingClientRect();
+          const img = imageEl.value;
+          const crop = cropRect();
+          if (!crop) return;
+          const maxX = Math.max(1, rotatedSize(img).w - crop.sw);
+          const maxY = Math.max(1, rotatedSize(img).h - crop.sh);
+          /* 拖动方向与取景相反：手指右移 → 画面右移（看左边内容） */
+          const dx = (ev.clientX - panStart.x) / rect.width;
+          const dy = (ev.clientY - panStart.y) / rect.height;
+          panX.value = clamp(panStart.panX - dx * (crop.sw / maxX) * zoom.value, 0, 1);
+          panY.value = clamp(panStart.panY - dy * (crop.sh / maxY) * zoom.value, 0, 1);
+          scheduleDither();
+        };
+
+        const onPanEnd = () => {
+          if(!dragging.value)return;
+          dragging.value = false;
+          panStart = null;
+          if(cropAnimation !== null) {cancelAnimationFrame(cropAnimation);cropAnimation=null;}
+          scheduleDither();
+        };
+
+        const onWheel = (ev) => {
+          if (busy.value || tab.value !== 'image' || !imageEl.value) return;
+          ev.preventDefault();
+          const next = clamp(zoom.value + (ev.deltaY > 0 ? -0.08 : 0.08), 1, 4);
+          zoom.value = Math.round(next * 100) / 100;
+          scheduleDither();
+        };
+
+        const push = async () => {
+          if (busy.value) return;
+          busy.value = true;
+          phase.value = 'prepare';
+          status.value = '生成点阵…';
+          clearTimeout(ditherTimer);
+          ++previewRevision;
+          ++imageRevision;
+          const quality = ditherQuality.value;
+          try {
+            await nextTick();
+            let ids;
+            if (tab.value === 'image') {
+              ids = await renderImageDithered();
+              if (!ids) throw new Error('图像已变化，重新发送');
+            } else {
+              renderText();
+              const ctx = canvas.value.getContext('2d', { willReadFrequently: true });
+              const result = await Pipeline.quantizeAsync(ctx.getImageData(0, 0, PANEL_W, PANEL_H).data,
+                { quality, style: 'flat' });
+              ids = result.ids;
+              paintPanelPreview(ids, result.preview);
+            }
+            const frame = Pipeline.makeFrame(ids, quality);
+            const baseline = lastPanelFrame.value;
+            if (tab.value === 'image' && regionUpdate.value) {
+              await Pipeline.verifyBaseline(baseline);
+              frame.baseGeneration = baseline.generation;
+            }
+            if (!forceRefresh.value && baseline &&
+                ids.every((id,i) => id === baseline.ids[i])) {
+              try {
+                await Pipeline.verifyBaseline(baseline);
+                phase.value = 'done'; status.value = '画面无变化'; return;
+              } catch (e) {
+                lastPanelFrame.value = null;
+                if (regionUpdate.value) throw e;
+              }
+            }
+            phase.value = 'refresh';
+            const report = await Pipeline.sendFrame(frame, message => { status.value = message; });
+            lastPanelFrame.value = Number.isInteger(report?.display_generation) && report.display_generation > 0
+              ? {id:report.id, generation:report.display_generation, ids} : null;
+            phase.value = 'done';
+            status.value = '已刷新到屏幕';
+          } catch (e) {
+            lastPanelFrame.value = null;
+            regionUpdate.value = false;
+            phase.value = 'error';
+            status.value = '失败：' + (e.message || e);
+          } finally {
+            busy.value = false;
+          }
+        };
+
+        const clearDisplay = async () => {
+          if (busy.value) return;
+          busy.value = true;
+          lastPanelFrame.value = null;
+          regionUpdate.value = false;
+          phase.value = 'refresh';
+          status.value = '正在清空屏幕…';
+          try {
+            const report = await Pipeline.clearScreen();
+            phase.value = 'done';
+            status.value = `屏幕已清空 · ${report.total_ms || 0} ms`;
+          } catch (e) {
+            phase.value = 'error';
+            status.value = '清屏失败：' + (e.message || e);
+          } finally {
+            busy.value = false;
+          }
+        };
+
+        const loadFile = async (file) => {
+          if (busy.value || !file) return;
+          if (!file.type || !file.type.startsWith('image/')) {
+            phase.value = 'error';
+            status.value = '失败：不是图片文件';
+            return;
+          }
+          status.value = '正在载入图片…';
+          phase.value = 'idle';
+          const revision = ++imageRevision;
+          let url;
+          try {
+            url = URL.createObjectURL(file);
+            const img = await new Promise((resolve, reject) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.onerror = () => reject(new Error('图片无法解码'));
+              im.src = url;
+            });
+            if (revision !== imageRevision || busy.value) return;
+            imageEl.value = img;
+            regionUpdate.value = false;
+            status.value = '已载入，调整取景后即可发送';
+            imageRotation.value = 0;
+            imageName.value = file.name;
+            imgW.value = img.naturalWidth || img.width;
+            imgH.value = img.naturalHeight || img.height;
+            tab.value = 'image';
+            resetCrop();
+            resetAdjust();
+            await nextTick();
+            scheduleDither();
+          } catch (e) {
+            if (revision !== imageRevision) return;
+            phase.value = 'error';
+            status.value = '失败：' + (e.message || e);
+          } finally {
+            if (url) URL.revokeObjectURL(url);
+          }
+        };
+
+        const onFileChange = async (ev) => {
+          const file = ev.target.files && ev.target.files[0];
+          ev.target.value = '';
+          await loadFile(file);
+        };
+
+        const onDrop = async (ev) => {
+          draggingFile.value = false;
+          await loadFile(ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0]);
+        };
+
+        let statusInFlight = false;
+        const checkDevice = async () => {
+          if (statusInFlight || busy.value) return;
+          statusInFlight = true;
+          try {
+            const info = await fetchJson('/api/status', { cache: 'no-store' }, 5000);
+            deviceOnline.value = !!(info.ok && info.w === PANEL_W && info.h === PANEL_H && info.format === Pipeline.FORMAT);
+            if (info.mode) wifiMode.value = info.mode;
+            if (info.ssid) wifiSsid.value = info.ssid;
+            if (info.url) wifiUrl.value = info.url;
+            if (deviceOnline.value) Pipeline.setPanelRotation(info.rotation ?? 0);
+            if (info.charge && !chargeBusy.value) applyChargeInfo(info);
+          } catch (_) {
+            deviceOnline.value = false;
+          } finally {
+            statusInFlight = false;
+          }
+        };
+
+        const scanWifi = async () => {
+          if (wifiBusy.value) return;
+          wifiBusy.value = true;
+          wifiStatus.value = '扫描中';
+          wifiStatusClass.value = '';
+          try {
+            const info = await fetchJson('/api/wifi/scan', { cache: 'no-store' }, 20000);
+            wifiList.value = (info.aps || []).filter((x) => x.ssid);
+            wifiStatus.value = wifiList.value.length ? `找到 ${wifiList.value.length} 个网络` : '没有扫到网络';
+          } catch (e) {
+            wifiStatusClass.value = 'err';
+            wifiStatus.value = '扫描失败，靠近路由器再试';
+          }
+          wifiBusy.value = false;
+        };
+
+        const selectWifi = ssid => {
+          if (wifiBusy.value) return;
+          if (selectedSsid.value !== ssid) wifiPass.value = '';
+          selectedSsid.value = ssid;
+        };
+
+        const setChargePower = async (id) => {
+          if (!chargeLevels.some(level => level.id === id) || chargeBusy.value || !chargeReady.value) return;
+          if (!Number.isInteger(chargeCapacity.value) || chargeCapacity.value < 500 || chargeCapacity.value > 10000) {
+            chargeStatus.value = '请输入 500–10000 mAh 范围内的整数容量';
+            chargeStatusClass.value = 'err';
+            return;
+          }
+          chargeBusy.value = true;
+          chargeStatusClass.value = '';
+          chargeStatus.value = '设置中';
+          try {
+            const info = await fetchJson('/api/charge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ power: id, capacity_mah: chargeCapacity.value }),
+            });
+            applyChargeInfo(info, true);
+            chargeStatus.value = `已设为 ${info.name || id}`;
+            chargeStatusClass.value = 'ok';
+          } catch (e) {
+            chargeStatusClass.value = 'err';
+            chargeStatus.value = '设置失败，稍后重试';
+          }
+          chargeBusy.value = false;
+        };
+
+        const connectWifi = async () => {
+          if (!selectedSsid.value || wifiBusy.value) return;
+          wifiBusy.value = true;
+          wifiStatusClass.value = '';
+          wifiStatus.value = '连接中';
+          try {
+            await fetchJson('/api/wifi/connect', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ssid: selectedSsid.value, password: wifiPass.value || '' }),
+            });
+            wifiStatus.value = '已提交。手机改连该 Wi-Fi，再扫屏幕上的二维码。';
+            wifiStatusClass.value = 'ok';
+          } catch (e) {
+            wifiStatusClass.value = 'err';
+            wifiStatus.value = '提交失败，设备可能已切换网络';
+          }
+          wifiBusy.value = false;
+        };
+
+        onMounted(() => {
+          restoreTheme();
+          renderText();
+          checkDevice();
+          setInterval(() => { if (!document.hidden) checkDevice(); }, 8000);
+          document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDevice(); });
+          const frame = canvas.value && canvas.value.parentElement;
+          if (frame) frame.addEventListener('wheel', onWheel, { passive: false });
+          document.addEventListener('paste', (ev) => {
+            const item = Array.from(ev.clipboardData?.items || []).find((x) => x.type.startsWith('image/'));
+            if (item) loadFile(item.getAsFile());
+          });
+        });
+
+        return {
+          tab, text, bg, fg, fontSize, busy, busyLabel, status, statusClass, colors,
+          canvas, appearanceCanvas, fileInput, imageName, imageEl, imgW, imgH, quant, dragging,
+          previewPixels, noisePreviews, noisePreviewBusy, ditherQuality, ditherModes, sixDenoise, sixDenoiseModes, setSixDenoise, onNoiseCompareToggle,
+          deviceOnline, renderStyle, renderStyles, previewBusy, usedColors, draggingFile,
+          zoom, panX, panY, exposure, brightness, contrast, highlights, shadows, saturation,
+          wifiMode, wifiSsid, wifiUrl, wifiList, selectedSsid, wifiPass, wifiBusy, wifiStatus, wifiStatusClass,
+          chargeCapacity, chargeDirty, chargeReady, chargeDetail, gaugeDetail, chargePower, chargeBusy, chargeStatus, chargeStatusClass, chargeLevels,
+          switchTab, renderText, onFileChange, onDrop, push, setQuant, setDitherQuality, setRenderStyle,
+          clearDisplay,
+          lastPanelFrame, regionUpdate, forceRefresh, updateRect, canRegionUpdate, setRegionUpdate,
+          onCropChange, onAdjustChange, resetCrop, resetAdjust, rotateImage, imageRotation,
+          onPanStart, onPanMove, onPanEnd, scanWifi, selectWifi, connectWifi, setChargePower,
+          themes, theme, themeName, setTheme,
+        };
+      },
+    }).mount('#app');
+  </script>
+</body>
+</html>

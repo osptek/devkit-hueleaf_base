@@ -1,0 +1,6 @@
+# 本地参考素材，不进仓库
+reference/
+
+# ESP-IDF 构建产物
+build/
+sdkconfig.old
