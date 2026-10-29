@@ -53,7 +53,7 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 | 按键 | 复位键、电源键 |
 | 指示灯 | 充电指示（蓝）、开机指示（绿） |
 
-完整原理图见 [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf)。
+完整原理图见 [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf)，元件位置见位号图 [hardware/HueLeaf_Base_Placement.pdf](hardware/HueLeaf_Base_Placement.pdf)。
 
 ### 引脚分配
 
@@ -83,7 +83,7 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 | 目录 | 内容 |
 | :--- | :--- |
 | [`examples/`](examples) | 示例代码与出厂固件 |
-| [`hardware/`](hardware) | 原理图 |
+| [`hardware/`](hardware) | 原理图、位号图 |
 
 ## 开发环境
 

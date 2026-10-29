@@ -53,7 +53,7 @@ This repository is intended for secondary development and provides ESP-IDF-based
 | Buttons | Reset, Power |
 | LEDs | Charging (blue), Power on (green) |
 
-Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf).
+Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf). Component placement: [hardware/HueLeaf_Base_Placement.pdf](hardware/HueLeaf_Base_Placement.pdf).
 
 ### Pin Assignment
 
@@ -83,7 +83,7 @@ Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base
 | Directory | Contents |
 | :--- | :--- |
 | [`examples/`](examples) | Examples and factory firmware |
-| [`hardware/`](hardware) | Schematic |
+| [`hardware/`](hardware) | Schematic, component placement |
 
 ## Development Environment
 
