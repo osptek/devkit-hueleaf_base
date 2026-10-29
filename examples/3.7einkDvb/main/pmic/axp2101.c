@@ -21,6 +21,9 @@ static const char *TAG = "axp2101";
 #define AXP_REG_ADC_CHANNEL      0x30  /* XPOWERS_AXP2101_ADC_CHANNEL_CTRL */
 #define AXP_REG_ADC_VBAT_H       0x34  /* XPOWERS_AXP2101_ADC_DATA_RELUST0 */
 #define AXP_REG_ADC_VBAT_L       0x35  /* XPOWERS_AXP2101_ADC_DATA_RELUST1 */
+#define AXP_REG_INTSTS1          0x48
+#define AXP_REG_INTEN2           0x41
+#define AXP_REG_INTSTS2          0x49
 #define AXP_REG_TS_PIN_CTRL      0x50
 #define AXP_REG_ICC_CHG          0x62  /* XPOWERS_AXP2101_ICC_CHG_SET */
 #define AXP_REG_BAT_DET          0x68  /* XPOWERS_AXP2101_BAT_DET_CTRL */
@@ -34,6 +37,7 @@ static const char *TAG = "axp2101";
 #define AXP_DLDO1_EN_BIT         7
 #define AXP_GAUGE_EN_BIT         3  /* enableGauge */
 #define AXP_CHG_EN_BIT           1
+#define AXP_PWRON_SHORT_BIT      3  /* XPOWERS_AXP2101_PKEY_SHORT_IRQ >> 8 */
 #define AXP_ADC_BAT_BIT          0  /* enableBattVoltageMeasure */
 #define AXP_ADC_TS_BIT           1
 #define AXP_BAT_DET_BIT          0  /* enableBattDetection */
@@ -88,6 +92,44 @@ static esp_err_t axp_write(uint8_t reg, uint8_t val)
     esp_err_t err = i2c_master_transmit(s_dev, buf, sizeof(buf), AXP_I2C_TIMEOUT_MS);
     board_i2c_unlock();
     return err;
+}
+
+esp_err_t axp2101_pwron_init(void)
+{
+    if (!s_inited) return ESP_ERR_INVALID_STATE;
+    uint8_t enabled;
+    ESP_RETURN_ON_ERROR(axp_read(AXP_REG_INTEN2, &enabled), TAG, "PWRON IRQ enable");
+    /* Discard startup IRQs before accepting user presses, including the power-on key. */
+    bool ignored;
+    ESP_RETURN_ON_ERROR(axp2101_take_pwron_short_press(&ignored), TAG, "startup IRQ clear");
+    return axp_write(AXP_REG_INTEN2, (uint8_t)(enabled | (1u << AXP_PWRON_SHORT_BIT)));
+}
+
+esp_err_t axp2101_take_pwron_short_press(bool *pressed)
+{
+    if (!pressed) return ESP_ERR_INVALID_ARG;
+    *pressed = false;
+    if (!s_inited) return ESP_ERR_INVALID_STATE;
+
+    uint8_t status[3];
+    for (unsigned i = 0; i < sizeof(status); ++i) {
+        ESP_RETURN_ON_ERROR(axp_read(AXP_REG_INTSTS1 + i, &status[i]), TAG, "IRQ status");
+    }
+    if (!(status[0] | status[1] | status[2])) return ESP_OK;
+    ESP_LOGI(TAG, "IRQ INTSTS=0x%02X/0x%02X/0x%02X", status[0], status[1], status[2]);
+    /* W1C only the observed snapshot. Consume all sources so nIRQ can deassert
+     * and the next GPIO falling edge can be detected. INTEN and power timings stay intact. */
+    if (status[1]) {
+        ESP_RETURN_ON_ERROR(axp_write(AXP_REG_INTSTS2, status[1]), TAG, "PWRON IRQ acknowledge");
+        *pressed = (status[1] & (1u << AXP_PWRON_SHORT_BIT)) != 0;
+    }
+    /* Preserve an acknowledged key result even if another source fails to clear. */
+    for (unsigned i = 0; i < sizeof(status); i += 2) {
+        if (status[i]) {
+            ESP_RETURN_ON_ERROR(axp_write(AXP_REG_INTSTS1 + i, status[i]), TAG, "IRQ acknowledge");
+        }
+    }
+    return ESP_OK;
 }
 
 static uint8_t volt_to_code(uint16_t mv)

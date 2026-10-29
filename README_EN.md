@@ -50,7 +50,7 @@ This repository is intended for secondary development and provides ESP-IDF-based
 | NFC | ST25R3916 |
 | Storage | 4 MB Flash, microSD |
 | USB | Type-C, ESP32-C5 native USB |
-| Buttons | Reset, Power |
+| Buttons | Reset, Power, GPIO28 button |
 | LEDs | Charging (blue), Power on (green) |
 
 Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf). Component placement: [hardware/HueLeaf_Base_Placement.pdf](hardware/HueLeaf_Base_Placement.pdf).
@@ -70,6 +70,7 @@ Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base
 | NFC interrupt | 24 | ST25R3916 |
 | PMIC interrupt | 25 | AXP2101 |
 | NFC enable | 26 | |
+| Button | 28 | Active low |
 
 | I2C Device | Address |
 | :--- | :--- |
@@ -93,11 +94,23 @@ Examples are developed with [ESP-IDF](https://github.com/espressif/esp-idf).
 
 ### 3.7einkDvb Web Image Upload
 
-Open a web page on your phone or computer and send images to the e-paper display. Source: [`examples/3.7einkDvb`](examples/3.7einkDvb).
+Open a web page on your phone or computer and send images or text to the e-paper display. Source: [`examples/3.7einkDvb`](examples/3.7einkDvb).
 
-#### Build and Flash
+<p align="center">
+  <img src="docs/images/device_photo.jpg" alt="Device photo" width="360">
+</p>
 
-Connect the board via USB and run in the example directory:
+#### Flashing
+
+**Option 1: Flash the factory firmware**
+
+The firmware is a merged image flashed at `0x0`:
+
+```bash
+esptool.py --chip esp32c5 write_flash 0x0 examples/3.7einkDvb/firmware/3.7einkDvb_factory_0x0.bin
+```
+
+**Option 2: Build from source**
 
 ```bash
 cd examples/3.7einkDvb
@@ -106,40 +119,55 @@ idf.py build flash monitor
 
 #### Wi-Fi Setup
 
-1. On first boot, the screen shows a **Scan to setup** QR code.
+1. On first boot, the device opens a setup hotspot and the screen shows **ready to setup / WiFi AP OPEN** with the setup address.
 2. Connect your phone to the device hotspot **`Eink E6 3.7`** (open, 5 GHz; your phone must support 5 GHz).
-3. Scan the QR code on the screen, or open `http://192.168.4.1` in a browser.
-4. Under Wi-Fi setup, choose a network, enter the password and connect.
-5. Once connected, the hotspot turns off and the screen refreshes with a **Scan to upload** QR code, showing the device's LAN address below.
+3. Open `http://192.168.4.1` in a browser.
+4. In the Network tab, tap Scan Wi-Fi, choose a network, enter the password and connect.
+5. Once connected, the hotspot turns off and the screen refreshes with a **Scan to upload** QR code.
 
 Wi-Fi credentials are saved on the device and used automatically on next boot. If it can't connect within 12 seconds, the setup hotspot opens again.
 
 > [!NOTE]
 > The example hard-codes the Wi-Fi country code to `CN` and runs the setup hotspot on 5 GHz channel 36. If you are in another country or region, change the country code in `examples/3.7einkDvb/main/wifi_mgr/wifi_mgr.c` and `WIFI_AP_CHANNEL` in `wifi_mgr.h` to comply with local radio regulations.
 
-#### Sending Images
+#### Web Interface
 
-1. Switch your phone back to the Wi-Fi network you just configured, then scan the **Scan to upload** QR code to open the web page.
-2. Choose an image under Image, or drag and drop / paste one.
-3. Adjust the picture:
-   - **Framing & rotation**: auto-cropped to the screen ratio; drag and zoom to frame, or rotate 90° left / right
-   - **Light & color**: exposure, brightness, contrast, highlights, shadows, saturation
-   - **Six-color mixing & style**: color / grayscale, dithering, denoising; enable the dithered-pixel view to preview
-   - **Text**: add text on the image with adjustable size, color and background
-4. Check the result in the screen preview, then send. The e-paper performs a full refresh.
+Switch your phone back to the Wi-Fi network you just configured, then scan the **Scan to upload** QR code on the screen. The page has four tabs (UI text is in Chinese):
 
-#### Other Features
-
-| Feature | Description |
+| Tab | Features |
 | :--- | :--- |
-| Clear screen | Refresh the screen to all white |
-| Region replace | Replace only one area of the picture |
-| Charging settings | Under Settings, choose the charge level and enter the battery's rated capacity (mAh) |
-| NFC reading | Hold an NFC card near the device; data read is saved to `/sdcard/nfc/` on the TF card (TF card required) |
+| Network | Connection status and device address; scan and connect to Wi-Fi |
+| Text | Enter text, choose background color, text color and font size, then send to the screen |
+| Image | Load an image (drag and drop or paste supported), adjust it and send with six-color dithering; clear the screen |
+| Settings | Enter the battery's rated capacity (mAh) and choose trickle / normal / fast charging |
 
-#### Screen Orientation
+The Image tab offers:
 
-Rotated 180° by default. To change it, edit `EINK_ROTATION` in `examples/3.7einkDvb/main/pin_map.h` (`0` or `180`), then rebuild and flash.
+- **Framing & rotation**: auto-cropped to the screen ratio; zoom, pan horizontally / vertically, or rotate 90° left / right
+- **Six-color mixing & style**: dithering and denoising; enable the dithered-pixel view to preview
+- **Light & color**: exposure, brightness, contrast, highlights, shadows, saturation
+- **Region replace & resend**: replace only one area of the picture
+
+Images are processed in the browser; only the six-color pixel data is uploaded. The screen performs a full refresh.
+
+| Network | Text |
+| :---: | :---: |
+| <img src="docs/images/web_network.png" alt="Network" width="400"> | <img src="docs/images/web_text.png" alt="Text" width="400"> |
+| **Image** | **Settings** |
+| <img src="docs/images/web_image_loaded.png" alt="Image" width="400"> | <img src="docs/images/web_settings.png" alt="Settings" width="400"> |
+
+#### Buttons
+
+| Button | Function |
+| :--- | :--- |
+| Power (short press) | Toggle the screen between white and the current picture; the picture is retained |
+| GPIO28 button | Rotate the current picture by 90° on each press |
+
+The default orientation is set by `EINK_ROTATION` in `examples/3.7einkDvb/main/pin_map.h` (`0`, `90`, `180` or `270`; default `0`).
+
+#### NFC Reading
+
+Hold an NFC card near the device; data read is saved to `/sdcard/nfc/` on the TF card (TF card required).
 
 ## License
 

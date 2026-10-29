@@ -50,7 +50,7 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 | NFC | ST25R3916 |
 | 存储 | 4 MB Flash，TF 卡 |
 | USB | Type-C，ESP32-C5 原生 USB |
-| 按键 | 复位键、电源键 |
+| 按键 | 复位键、电源键、GPIO28 按键 |
 | 指示灯 | 充电指示（蓝）、开机指示（绿） |
 
 完整原理图见 [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf)，元件位置见位号图 [hardware/HueLeaf_Base_Placement.pdf](hardware/HueLeaf_Base_Placement.pdf)。
@@ -70,6 +70,7 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 | NFC 中断 | 24 | ST25R3916 |
 | PMIC 中断 | 25 | AXP2101 |
 | NFC 使能 | 26 | |
+| 按键 | 28 | 低电平有效 |
 
 | I2C 设备 | 地址 |
 | :--- | :--- |
@@ -93,11 +94,23 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 
 ### 3.7einkDvb 网页传图
 
-用手机或电脑打开网页，把图片发送到墨水屏上显示。代码位于 [`examples/3.7einkDvb`](examples/3.7einkDvb)。
+用手机或电脑打开网页，把图片或文字发送到墨水屏上显示。代码位于 [`examples/3.7einkDvb`](examples/3.7einkDvb)。
 
-#### 编译烧录
+<p align="center">
+  <img src="docs/images/device_photo.jpg" alt="实物显示效果" width="360">
+</p>
 
-通过 USB 连接开发板，在示例目录下执行：
+#### 烧录
+
+**方式一：直接烧录出厂固件**
+
+固件为合并镜像，从 `0x0` 地址烧录：
+
+```bash
+esptool.py --chip esp32c5 write_flash 0x0 examples/3.7einkDvb/firmware/3.7einkDvb_factory_0x0.bin
+```
+
+**方式二：从源码编译烧录**
 
 ```bash
 cd examples/3.7einkDvb
@@ -106,40 +119,55 @@ idf.py build flash monitor
 
 #### 配网
 
-1. 首次上电，屏幕显示 **Scan to setup** 二维码。
+1. 首次上电，设备打开配网热点，屏幕显示 **ready to setup / WiFi AP OPEN** 和配网地址。
 2. 手机连接设备热点 **`Eink E6 3.7`**（无密码，5 GHz，手机需支持 5 GHz）。
-3. 扫描屏幕上的二维码，或在浏览器打开 `http://192.168.4.1`。
-4. 在「配网」中选择 Wi-Fi，填写密码后点击连接。
-5. 连接成功后热点自动关闭，屏幕刷新为 **Scan to upload** 二维码，下方显示设备的局域网地址。
+3. 在浏览器打开 `http://192.168.4.1`。
+4. 在「网络」中点击「扫描 Wi-Fi」，选择网络，填写密码后连接。
+5. 连接成功后热点自动关闭，屏幕刷新为 **Scan to upload** 二维码。
 
 Wi-Fi 信息会保存在设备中，下次开机自动连接；12 秒内未连上则重新打开配网热点。
 
 > [!NOTE]
 > 示例中 Wi-Fi 国家码固定为 `CN`，配网热点使用 5 GHz 36 信道。在其他国家或地区使用时，请按当地无线电法规修改 `examples/3.7einkDvb/main/wifi_mgr/wifi_mgr.c` 中的国家码，以及 `wifi_mgr.h` 中的 `WIFI_AP_CHANNEL`。
 
-#### 发送图片
+#### 网页功能
 
-1. 手机切回刚才配置的 Wi-Fi，扫描 **Scan to upload** 二维码进入网页。
-2. 在「图片」中选择一张图片，也可以拖入或粘贴。
-3. 调整画面：
-   - **取景与旋转**：自动裁剪为屏幕比例，可拖动、缩放取景，或左右旋转 90°
-   - **明暗与颜色**：曝光、亮度、对比度、高光、阴影、饱和度
-   - **六色混色与风格**：彩色 / 灰度、抖动、降噪，可打开「查看抖动像素」预览效果
-   - **文本**：在图上添加文字，可设置字号、字色、背景
-4. 在「屏幕预览」中确认效果后发送，墨水屏整屏刷新显示。
+手机切回刚才配置的 Wi-Fi，扫描屏幕上的 **Scan to upload** 二维码进入网页。网页分为四个标签页：
 
-#### 其他功能
-
-| 功能 | 说明 |
+| 标签页 | 功能 |
 | :--- | :--- |
-| 清空屏幕 | 将屏幕刷成全白 |
-| 区域替换 | 只替换画面中的一块区域 |
-| 充电设置 | 在「设置」中选择充电档位，并填写电池额定容量（mAh） |
-| NFC 读卡 | 将 NFC 卡贴近设备，读取的数据保存到 TF 卡 `/sdcard/nfc/` 目录（需插入 TF 卡） |
+| 网络 | 显示连接状态与设备地址，扫描并连接 Wi-Fi |
+| 文本 | 输入文字，选择背景色、字色和字号，发送到屏幕 |
+| 图片 | 选择图片（可拖入或粘贴），调整后以六色抖动发送到屏幕；可清空屏幕 |
+| 设置 | 填写电池额定容量（mAh），选择涓流 / 正常 / 快速充电档位 |
 
-#### 屏幕方向
+图片标签页中可调整：
 
-默认旋转 180°。如需修改，编辑 `examples/3.7einkDvb/main/pin_map.h` 中的 `EINK_ROTATION`（可选 `0` 或 `180`），然后重新编译烧录。
+- **取景与旋转**：自动裁剪为屏幕比例，可缩放、水平 / 垂直移动取景，或左右旋转 90°
+- **六色混色与风格**：抖动、降噪，可勾选「查看抖动像素」预览效果
+- **明暗与颜色**：曝光、亮度、对比度、高光、阴影、饱和度
+- **区域替换与重复发送**：只替换画面中的一块区域
+
+图片在浏览器中处理，发送时只上传六色点阵；屏幕整屏刷新。
+
+| 网络 | 文本 |
+| :---: | :---: |
+| <img src="docs/images/web_network.png" alt="网络" width="400"> | <img src="docs/images/web_text.png" alt="文本" width="400"> |
+| **图片** | **设置** |
+| <img src="docs/images/web_image_loaded.png" alt="图片" width="400"> | <img src="docs/images/web_settings.png" alt="设置" width="400"> |
+
+#### 按键
+
+| 按键 | 功能 |
+| :--- | :--- |
+| 电源键（短按） | 屏幕在白屏和当前画面之间切换，画面内容保留 |
+| GPIO28 按键 | 每按一次，当前画面旋转 90° |
+
+默认屏幕方向由 `examples/3.7einkDvb/main/pin_map.h` 中的 `EINK_ROTATION` 设置（可选 `0`、`90`、`180`、`270`，默认 `0`）。
+
+#### NFC 读卡
+
+将 NFC 卡贴近设备，读取的数据保存到 TF 卡 `/sdcard/nfc/` 目录（需插入 TF 卡）。
 
 ## 许可证
 

@@ -12,6 +12,12 @@ typedef enum {
 } axp2101_chg_pwr_t;
 
 esp_err_t axp2101_init(void);
+/* Arm PWRON short-press IRQ, discarding events latched before startup. */
+esp_err_t axp2101_pwron_init(void);
+/* Task context: read/log/acknowledge the three IRQ status bytes (W1C), so nIRQ
+ * releases. Only INTSTS2[3] reports a short press. A true result remains valid
+ * even if acknowledging another IRQ source subsequently returns an error. */
+esp_err_t axp2101_take_pwron_short_press(bool *pressed);
 esp_err_t axp2101_enable_peripheral_rails(void);
 esp_err_t axp2101_configure_charge(void);
 esp_err_t axp2101_set_charge_power(axp2101_chg_pwr_t pwr);

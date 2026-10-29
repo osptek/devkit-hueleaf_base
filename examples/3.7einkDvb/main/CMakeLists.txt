@@ -7,6 +7,7 @@ idf_component_register(
         "imu/msa321.c"
         "nfc_driver/nfc_driver.c"
         "screen_driver/screen_driver.c"
+        "screen_driver/screen_rotation.c"
         "screen_ui/screen_ui.c"
         "qrcode/qrcode.c"
         "tf_card/tf_card.c"
@@ -31,6 +32,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_i2c
         esp_common
+        esp_partition
         esp_timer
         esp_wifi
         esp_netif

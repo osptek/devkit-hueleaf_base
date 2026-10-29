@@ -7,13 +7,13 @@
   'use strict';
   const WIDTH = 480, HEIGHT = 720, FRAME_BYTES = WIDTH * HEIGHT / 2;
   const FORMAT = 'otp6-v1';
-  let panelRotation = 0;
-  function setPanelRotation(degrees) {
-    if (degrees !== 0 && degrees !== 180) throw new Error('不支持的整屏安装方向');
-    panelRotation = degrees;
+  let panelRotation = 0, rotationEpoch = 1;
+  function setPanelRotation(degrees, epoch = rotationEpoch) {
+    if (![0,90,180,270].includes(degrees)) throw new Error('不支持的整屏安装方向');
+    panelRotation = degrees; rotationEpoch = epoch;
   }
   function sourceIndex(x, y) {
-    return panelRotation === 180 ? (HEIGHT - 1 - y) * WIDTH + WIDTH - 1 - x : y * WIDTH + x;
+    return panelRotation === 90 ? (WIDTH-1-x)*HEIGHT+y : panelRotation === 270 ? x*HEIGHT+HEIGHT-1-y : panelRotation === 180 ? (HEIGHT - 1 - y) * WIDTH + WIDTH - 1 - x : y * WIDTH + x;
   }
 
   const COLORS = Object.freeze([
@@ -88,7 +88,7 @@
   // Source-domain bilateral filter: 3x3, range-weighted, before quantization.
   // One browser-side RGB row, no frame buffer on the MCU. Do not filter IDs:
   // removing output dots would destroy the deliberate spatial color mixture.
-  function sixColorRow(rgba, y, row, range) {
+  function sixColorRow(rgba, y, row, range) { const {width:WIDTH,height:HEIGHT}=logicalSize();
     for (let x=0;x<WIDTH;x++) {
       const center=(y*WIDTH+x)*4;
       let r=0,g=0,b=0,total=0;
@@ -110,7 +110,7 @@
   }
   // Only two error rows are kept. Full-strength linear-light diffusion preserves
   // the mean ink coverage for gray, pink and other spatially mixed colors.
-  function* quantizeSteps(rgba, options = {}) {
+  function logicalSize(){return panelRotation%180?{width:720,height:480}:{width:480,height:720};} function* quantizeSteps(rgba, options = {}) { const {width:WIDTH,height:HEIGHT}=logicalSize();
     const { gray = false, quality = 'best', style = 'photo', canceled = () => false } = options;
     if (!Object.hasOwn(MODES, quality)) throw new Error('未知混色质量');
     if (!['photo', 'illustration', 'flat'].includes(style)) throw new Error('未知呈现风格');
@@ -219,7 +219,7 @@
         body[offset++] = (a << 4) | b; counts[a]++; counts[b]++;
       }
     }
-    return { body, counts, format: FORMAT, quality, pass: 0, checksum: checksum(body) };
+    return { rotationEpoch, body, counts, format: FORMAT, quality, pass: 0, checksum: checksum(body) };
   }
   function previewIds(ids) {
     if (!(ids instanceof Uint8Array) || ids.length !== WIDTH * HEIGHT) throw new Error('像素数量错误');
@@ -233,7 +233,7 @@
     }
     return preview;
   }
-  function composeRegion(base, next, region) {
+  function composeRegion(base, next, region) { const {width:WIDTH,height:HEIGHT}=logicalSize();
     if (!(base instanceof Uint8Array) || !(next instanceof Uint8Array) || base.constructor !== next.constructor ||
         base.length !== WIDTH * HEIGHT || next.length !== base.length) throw new Error('区域更新需要完整基准画面');
     const {x, y, width, height} = region || {};
@@ -283,7 +283,7 @@
     const accepted = await request('/api/frame', {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', 'X-Eink-Format': frame.format,
-        'X-Eink-Pass': '0', 'X-Eink-Quality': frame.quality, 'X-Eink-Checksum': frame.checksum,
+        'X-Eink-Rotation-Epoch': String(frame.rotationEpoch), 'X-Eink-Pass': '0', 'X-Eink-Quality': frame.quality, 'X-Eink-Checksum': frame.checksum,
         ...(frame.baseGeneration ? {'X-Eink-Base-Generation': String(frame.baseGeneration)} : {}) },
       body: frame.body,
     }, 240000);

@@ -383,7 +383,7 @@
     .preview-frame {
       position: relative;
       width: min(100%, 300px);
-      aspect-ratio: 480 / 720;
+      aspect-ratio: auto;
       margin: 0 auto 8px;
       border: 1px solid var(--line-2);
       background: #15171a;
@@ -547,7 +547,7 @@
     <div class="hdr">
       <div>
         <h1 class="brand">Eink E6 3.7</h1>
-        <div class="spec">480×720 · 六色墨水屏</div>
+        <div class="spec">{{ panelWidth }}?{{ panelHeight }} ? {{ panelRotation }}?</div>
       </div>
       <div class="link" :class="{ on: deviceOnline }">
         <span class="dot"></span>{{ deviceOnline ? '已连接' : '未连接' }}
@@ -655,12 +655,12 @@
         <div class="preview-frame" :class="{ dragging, 'has-img': imageEl, 'pixel-inspect': previewPixels }"
              @pointerdown="onPanStart" @pointermove="onPanMove" @pointerup="onPanEnd"
              @pointercancel="onPanEnd" @lostpointercapture="onPanEnd">
-          <canvas ref="canvas" width="480" height="720" aria-label="六色画面预览"></canvas>
+          <canvas ref="canvas" :width="panelWidth" :height="panelHeight" aria-label="六色画面预览"></canvas>
           <canvas v-show="tab === 'image' && imageEl && !previewPixels && !dragging" ref="appearanceCanvas"
                   class="appearance-canvas" width="240" height="360" aria-hidden="true"></canvas>
           <div v-if="tab === 'image' && !imageEl" class="preview-empty"><strong>选择一张图片</strong><span>拖入、粘贴或点击按钮载入</span></div>
           <div v-if="tab === 'image' && imageEl && regionUpdate" class="update-outline"
-               :style="{ left:updateRect.x/480*100+'%', top:updateRect.y/720*100+'%', width:updateRect.width/480*100+'%', height:updateRect.height/720*100+'%' }"></div>
+               :style="{ left:updateRect.x/panelWidth*100+'%', top:updateRect.y/panelHeight*100+'%', width:updateRect.width/panelWidth*100+'%', height:updateRect.height/panelHeight*100+'%' }"></div>
           <span v-if="tab === 'image' && previewBusy" class="preview-badge" role="status">正在生成预览…</span>
         </div>
         <div v-if="tab === 'image' && imageEl" class="preview-controls">
@@ -853,8 +853,8 @@
         <div v-if="regionUpdate" class="region-fields">
           <label>X<input type="number" min="0" max="479" step="1" v-model.number="updateRect.x" @input="onCropChange" /></label>
           <label>Y<input type="number" min="0" max="719" step="1" v-model.number="updateRect.y" @input="onCropChange" /></label>
-          <label>宽<input type="number" min="1" :max="480-updateRect.x" step="1" v-model.number="updateRect.width" @input="onCropChange" /></label>
-          <label>高<input type="number" min="1" :max="720-updateRect.y" step="1" v-model.number="updateRect.height" @input="onCropChange" /></label>
+          <label>宽<input type="number" min="1" :max="panelWidth-updateRect.x" step="1" v-model.number="updateRect.width" @input="onCropChange" /></label>
+          <label>高<input type="number" min="1" :max="panelHeight-updateRect.y" step="1" v-model.number="updateRect.height" @input="onCropChange" /></label>
         </div>
         <p class="hint">{{ regionUpdate ? '仅替换框内内容，屏幕仍执行完整刷新。' : canRegionUpdate ? '可在上次成功发送的画面上替换指定区域。' : '完整发送一次画面后，可启用区域替换。' }}</p>
 
@@ -884,7 +884,7 @@
     const { createApp, ref, onMounted, computed, nextTick } = Vue;
 
     const Pipeline = window.EinkPipeline;
-    const PANEL_W = Pipeline.WIDTH, PANEL_H = Pipeline.HEIGHT;
+    let PANEL_W = Pipeline.WIDTH, PANEL_H = Pipeline.HEIGHT;
     const COLORS = Pipeline.COLORS;
     const cssOf = (id) => COLORS.find(c => c.id === id).css;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -976,7 +976,7 @@
         const bg = ref(0x1);
         const fg = ref(0x0);
         const fontSize = ref(42);
-        const busy = ref(false);
+        const busy = ref(false); const panelWidth=ref(PANEL_W), panelHeight=ref(PANEL_H), panelRotation=ref(0);
         const status = ref('');
         const phase = ref('idle');
         const deviceOnline = ref(false);
@@ -1532,11 +1532,20 @@
           statusInFlight = true;
           try {
             const info = await fetchJson('/api/status', { cache: 'no-store' }, 5000);
-            deviceOnline.value = !!(info.ok && info.w === PANEL_W && info.h === PANEL_H && info.format === Pipeline.FORMAT);
+            deviceOnline.value = !!(info.ok && info.w === 480 && info.h === 720 && info.format === Pipeline.FORMAT);
             if (info.mode) wifiMode.value = info.mode;
             if (info.ssid) wifiSsid.value = info.ssid;
             if (info.url) wifiUrl.value = info.url;
-            if (deviceOnline.value) Pipeline.setPanelRotation(info.rotation ?? 0);
+            if (deviceOnline.value && !info.rotation_busy) {
+ const rotation=info.rotation??0,w=rotation%180?720:480,h=rotation%180?480:720;
+ Pipeline.setPanelRotation(rotation,info.rotation_epoch??1);
+ if(panelRotation.value!==rotation || PANEL_W!==w){
+ PANEL_W=w;PANEL_H=h;panelWidth.value=w;panelHeight.value=h;panelRotation.value=rotation;
+ scratch.width=w;scratch.height=h;canvas.value.width=w;canvas.value.height=h;
+ lastPanelFrame.value=null;regionUpdate.value=false;updateRect.value={x:0,y:0,width:w,height:h};
+ await nextTick();if(tab.value==='image')scheduleDither();else renderText();
+ }
+ }
             if (info.charge && !chargeBusy.value) applyChargeInfo(info);
           } catch (_) {
             deviceOnline.value = false;
@@ -1617,7 +1626,7 @@
           restoreTheme();
           renderText();
           checkDevice();
-          setInterval(() => { if (!document.hidden) checkDevice(); }, 8000);
+          setInterval(() => { if (!document.hidden) checkDevice(); }, 1000);
           document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDevice(); });
           const frame = canvas.value && canvas.value.parentElement;
           if (frame) frame.addEventListener('wheel', onWheel, { passive: false });
@@ -1628,7 +1637,7 @@
         });
 
         return {
-          tab, text, bg, fg, fontSize, busy, busyLabel, status, statusClass, colors,
+          panelWidth, panelHeight, panelRotation, tab, text, bg, fg, fontSize, busy, busyLabel, status, statusClass, colors,
           canvas, appearanceCanvas, fileInput, imageName, imageEl, imgW, imgH, quant, dragging,
           previewPixels, noisePreviews, noisePreviewBusy, ditherQuality, ditherModes, sixDenoise, sixDenoiseModes, setSixDenoise, onNoiseCompareToggle,
           deviceOnline, renderStyle, renderStyles, previewBusy, usedColors, draggingFile,

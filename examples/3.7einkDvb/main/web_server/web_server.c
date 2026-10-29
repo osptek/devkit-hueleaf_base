@@ -1,6 +1,7 @@
 #include "cJSON.h"
 #include "web_server.h"
 #include "pin_map.h"
+#include "screen_rotation.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -39,7 +40,7 @@ typedef struct {
     size_t bytes;
     TickType_t started;
     uint32_t hash, expected;
-    uint32_t id, base_generation;
+    uint32_t id, base_generation, rotation_epoch;
 } frame_rx_t;
 static frame_rx_t s_pending;
 
@@ -72,10 +73,11 @@ static const char *job_phase_name(job_phase_t phase)
     }
 }
 
+bool web_server_screen_busy(void){return s_job_phase == JOB_RECEIVING || s_job_phase == JOB_REFRESH;}
 static bool begin_job(job_kind_t kind)
 {
     portENTER_CRITICAL(&s_job_lock);
-    bool available = s_job_phase == JOB_IDLE || s_job_phase == JOB_ERROR;
+    bool available = !screen_rotation_busy() && (s_job_phase == JOB_IDLE || s_job_phase == JOB_ERROR);
     if (available) {
         if (++s_job_id == 0) ++s_job_id;
         s_job_kind = kind;
@@ -187,7 +189,7 @@ static esp_err_t pipeline_get_handler(httpd_req_t *req)
                                         pipeline_js_end - pipeline_js_start);
     if (err != ESP_OK) return err;
     char config[64];
-    int n = snprintf(config, sizeof(config), ";EinkPipeline.setPanelRotation(%u);", (unsigned)EINK_ROTATION);
+    int n = snprintf(config, sizeof(config), ";EinkPipeline.setPanelRotation(%u);", screen_rotation_get());
     if (n < 0 || (size_t)n >= sizeof(config)) return ESP_FAIL;
     err = httpd_resp_send_chunk(req, config, n);
     if (err != ESP_OK) return err;
@@ -228,8 +230,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     size_t used = append_charge_json(json, sizeof(json), (size_t)n);
     if (used + 48 >= sizeof(json)) return ESP_FAIL;
     int tail = snprintf(json + used, sizeof(json) - used,
-        ",\"job\":\"%s\",\"job_id\":%u,\"rotation\":%u}",
-        job_phase_name(s_job_phase), (unsigned)s_job_id, (unsigned)EINK_ROTATION);
+        ",\"job\":\"%s\",\"job_id\":%u,\"rotation\":%u,\"rotation_epoch\":%u,\"rotation_busy\":%s}",
+        job_phase_name(s_job_phase), (unsigned)s_job_id, screen_rotation_get(), (unsigned)screen_rotation_epoch(), screen_rotation_busy() ? "true" : "false");
     if (tail < 0 || (size_t)tail >= sizeof(json) - used) return ESP_FAIL;
     return send_json(req, json);
 }
@@ -386,6 +388,7 @@ static esp_err_t receive_frame_chunk(void *context, uint8_t *buffer,
         if (!valid) return ESP_ERR_INVALID_ARG;
         rx->hash = (rx->hash ^ buffer[i]) * 16777619U;
     }
+    (void)screen_rotation_capture_write(rx->bytes, buffer, ret);
     rx->bytes += ret;
     portENTER_CRITICAL(&s_job_lock);
     s_job_bytes = rx->bytes;
@@ -421,11 +424,16 @@ static void frame_job_task(void *arg)
         frame_rx_t rx = s_pending;
         screen_upload_report_t report = {0};
         esp_err_t err;
+        screen_rotation_lock();
         if (kind == JOB_FRAME) {
+            const uint8_t blank[3] = {1,1,1};
+            (void)screen_rotation_capture_begin(SCREEN_CACHE_OTP6, blank);
             uint8_t *buffer = malloc(FRAME_CHUNK_BYTES);
-            err = !buffer ? ESP_ERR_NO_MEM : screen_driver_upload(rx.base_generation,
+            err = !screen_rotation_matches(rx.rotation_epoch) ? ESP_ERR_INVALID_STATE :
+                !buffer ? ESP_ERR_NO_MEM : screen_driver_upload(rx.base_generation,
                 buffer, FRAME_CHUNK_BYTES, receive_frame_chunk, &rx, upload_progress, &report);
             free(buffer);
+            screen_rotation_capture_end(err == ESP_OK, report.display_generation);
             ESP_LOGI(TAG, "frame id=%u end %s bytes=%u",
                      (unsigned)rx.id, esp_err_to_name(err), (unsigned)rx.bytes);
             log_heap_stats("frame-end", rx.id);
@@ -448,9 +456,12 @@ static void frame_job_task(void *arg)
             const esp_err_t complete = httpd_req_async_handler_complete(rx.req);
             if (complete != ESP_OK) ESP_LOGW(TAG, "async complete: %s", esp_err_to_name(complete));
         } else {
+            screen_rotation_note_external();
             err = screen_driver_clear(&report);
+            if (err == ESP_OK) screen_rotation_note_blank();
             finish_job(err, &report);
         }
+        screen_rotation_unlock();
         ESP_LOGI(TAG, "job %s", err == ESP_OK ? "idle" : "error");
     }
 }
@@ -503,7 +514,8 @@ static esp_err_t frame_post_handler(httpd_req_t *req)
         send_json(req, "{\"ok\":false,\"error\":\"region baseline changed; send a full image\"}");
         return ESP_FAIL;
     }
-    if (!begin_job(JOB_FRAME)) {
+    if (!decimal_header(req, "X-Eink-Rotation-Epoch", &rx.rotation_epoch) ||
+        !screen_rotation_matches(rx.rotation_epoch) || !begin_job(JOB_FRAME)) {
         httpd_resp_set_status(req, "409 Conflict");
         send_json(req, "{\"ok\":false,\"error\":\"screen busy\"}");
         return ESP_FAIL;

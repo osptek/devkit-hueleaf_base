@@ -1,7 +1,9 @@
 #include "screen_ui.h"
 #include "pin_map.h"
+#include "screen_rotation.h"
 
 #include <string.h>
+#include <stdio.h>
 #include "esp_log.h"
 #include "qrcode.h"
 #include "screen_driver.h"
@@ -57,6 +59,12 @@ typedef struct {
     uint8_t col[SCREEN_HEIGHT];
 } qr_stream_t;
 
+/* Setup text and LAN QR share the same column buffer. Only the UI task uses it. */
+static qr_stream_t s_stream;
+static int ui_width=SCREEN_WIDTH, ui_height=SCREEN_HEIGHT;
+static unsigned ui_rotation;
+static char saved_title[48], saved_url[96];
+
 static int font_index(char c)
 {
     if (c < 32 || c > 126) {
@@ -77,7 +85,7 @@ static void draw_text_row(uint8_t *col, int x, int y, const char *text, int scal
 {
     int len = (int)strlen(text);
     int tw = len * (FONT_W + 1) * scale - scale;
-    int start_x = (SCREEN_WIDTH - tw) / 2;
+    int start_x = (ui_width - tw) / 2;
     if (x < start_x || x >= start_x + tw) {
         return;
     }
@@ -94,7 +102,7 @@ static void draw_text_row(uint8_t *col, int x, int y, const char *text, int scal
         }
         for (int s = 0; s < scale; s++) {
             int yy = y + gy * scale + s;
-            if (yy >= 0 && yy < SCREEN_HEIGHT) {
+            if (yy >= 0 && yy < ui_height) {
                 col[yy] = SCREEN_COLOR_BLACK;
             }
         }
@@ -118,14 +126,20 @@ static uint8_t pixel_at(const qr_stream_t *s, int x, int y)
 static void paint_column(qr_stream_t *s, int x)
 {
     memset(s->col, SCREEN_COLOR_WHITE, SCREEN_HEIGHT);
-    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    if (s->qr_size == 0) {
+        draw_text_row(s->col, x, 240, "ready to setup", 4);
+        draw_text_row(s->col, x, 340, "WiFi AP OPEN", 4);
+        draw_text_row(s->col, x, 400, s->url, 3);
+        return;
+    }
+    for (int y = 0; y < ui_height; y++) {
         s->col[y] = pixel_at(s, x, y);
     }
     if (s->title) {
         draw_text_row(s->col, x, 36, s->title, 3);
     }
     if (s->url) {
-        draw_text_row(s->col, x, SCREEN_HEIGHT - 70, s->url, 2);
+        draw_text_row(s->col, x, ui_height - 70, s->url, 2);
     }
 }
 
@@ -135,13 +149,13 @@ static uint8_t qr_pair_byte(qr_stream_t *s, size_t pixel_index)
     int byte_in_col = (int)(pixel_index % (SCREEN_HEIGHT / 2));
     int y0 = byte_in_col * 2;
     /* 与网页 packIdsMirrored 一致：列优先写入时对 X 做镜像 */
-    int xr = EINK_LOGICAL_X(SCREEN_WIDTH - 1 - x);
-    if (xr != s->last_x) {
-        paint_column(s, xr);
-        s->last_x = xr;
-    }
-    return (uint8_t)((s->col[EINK_LOGICAL_Y(y0)] << 4) |
-                     s->col[EINK_LOGICAL_Y(y0 + 1)]);
+    int xr, yr;
+    screen_rotation_source_xy(ui_rotation, SCREEN_WIDTH-1-x, y0, &xr, &yr);
+    if(xr!=s->last_x){paint_column(s,xr);s->last_x=xr;}
+    uint8_t hi=s->col[yr];
+    screen_rotation_source_xy(ui_rotation, SCREEN_WIDTH-1-x, y0+1, &xr, &yr);
+    if(xr!=s->last_x){paint_column(s,xr);s->last_x=xr;}
+    return (uint8_t)((hi<<4)|s->col[yr]);
 }
 
 static esp_err_t qr_read_cb(void *context, uint8_t *buffer, size_t capacity, size_t *received)
@@ -152,6 +166,7 @@ static esp_err_t qr_read_cb(void *context, uint8_t *buffer, size_t capacity, siz
     for (size_t i = 0; i < n; ++i) {
         buffer[i] = qr_pair_byte(s, s->sent + i);
     }
+
     s->sent += n;
     *received = n;
     return ESP_OK;
@@ -159,13 +174,14 @@ static esp_err_t qr_read_cb(void *context, uint8_t *buffer, size_t capacity, siz
 
 esp_err_t screen_ui_show_link_qr(const char *title, const char *url)
 {
-    static qr_stream_t s_stream;
     int qr_size = 0;
 
     if (url == NULL || url[0] == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    ui_rotation = screen_rotation_get();
+    screen_rotation_size(ui_rotation, &ui_width, &ui_height);
     memset(&s_stream, 0, sizeof(s_stream));
     if (!qrcode_encode(url, s_stream.modules, (int)sizeof(s_stream.modules), &qr_size)) {
         ESP_LOGE(TAG, "QR encode failed for %s", url);
@@ -173,7 +189,7 @@ esp_err_t screen_ui_show_link_qr(const char *title, const char *url)
     }
 
     int quiet = qr_size + 8;
-    int scale = SCREEN_WIDTH / quiet;
+    int scale = (ui_width < ui_height ? ui_width : ui_height) / quiet;
     if (scale < 2) {
         scale = 2;
     }
@@ -183,13 +199,49 @@ esp_err_t screen_ui_show_link_qr(const char *title, const char *url)
 
     s_stream.qr_size = qr_size;
     s_stream.scale = scale;
-    s_stream.origin_x = (SCREEN_WIDTH - qr_size * scale) / 2;
-    s_stream.origin_y = (SCREEN_HEIGHT - qr_size * scale) / 2 - 10;
-    s_stream.title = title;
-    s_stream.url = url;
+    s_stream.origin_x = (ui_width - qr_size * scale) / 2;
+    s_stream.origin_y = (ui_height - qr_size * scale) / 2 - 10;
+    snprintf(saved_title, sizeof(saved_title), "%s", title ? title : "");
+    s_stream.title = saved_title;
+    snprintf(saved_url, sizeof(saved_url), "%s", url);
+    s_stream.url = saved_url;
     s_stream.sent = 0;
     s_stream.last_x = -1;
 
     ESP_LOGI(TAG, "QR %s  modules=%d scale=%d", url, qr_size, scale);
+    screen_rotation_note_external();
+    esp_err_t err = screen_driver_show_stream(qr_read_cb, &s_stream);
+
+    if (err == ESP_OK) screen_rotation_note_ui();
+    return err;
+}
+
+esp_err_t screen_ui_show_setup(const char *url)
+{
+    if (url == NULL || url[0] == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ui_rotation = screen_rotation_get();
+    screen_rotation_size(ui_rotation, &ui_width, &ui_height);
+    memset(&s_stream, 0, sizeof(s_stream));
+    snprintf(saved_url, sizeof(saved_url), "%s", url);
+    s_stream.url = saved_url;
+    s_stream.last_x = -1;
+    ESP_LOGI(TAG, "setup text %s", url);
+    screen_rotation_note_external();
+    esp_err_t err = screen_driver_show_stream(qr_read_cb, &s_stream);
+
+    if (err == ESP_OK) screen_rotation_note_ui();
+    return err;
+}
+
+esp_err_t screen_ui_redraw_rotation(unsigned rotation)
+{
+    ui_rotation = rotation;
+    screen_rotation_size(rotation, &ui_width, &ui_height);
+    s_stream.origin_x = (ui_width - s_stream.qr_size * s_stream.scale) / 2;
+    s_stream.origin_y = (ui_height - s_stream.qr_size * s_stream.scale) / 2 - 10;
+    s_stream.sent = 0;
+    s_stream.last_x = -1;
     return screen_driver_show_stream(qr_read_cb, &s_stream);
 }
