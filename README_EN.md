@@ -24,7 +24,7 @@ OSPTEK E-Paper Development Kit · ESP32-C5 · 3.7″ 6-Color E-Paper · Dual-ban
 
 HueLeaf is an e-paper development kit by OSPTEK. This repository covers its Base Edition.
 
-The Base Edition is built around the ESP32-C5 and features a 3.7-inch six-color e-paper display capable of showing black, white, red, yellow, blue and green. The board integrates an AXP2101 power management IC, a PCF8563 RTC, an MSA321 accelerometer, an ST25R3916 NFC reader, 4 MB of Flash and a microSD slot, while the ESP32-C5 provides dual-band 2.4 GHz / 5 GHz Wi-Fi 6.
+The Base Edition is built around the ESP32-C5 and features a 3.7-inch six-color e-paper display capable of showing black, white, red, yellow, blue and green. The board integrates an AXP2101 power management IC, a PCF8563 RTC, an MSA321 accelerometer, 4 MB of Flash and a microSD slot, while the ESP32-C5 provides dual-band 2.4 GHz / 5 GHz Wi-Fi 6.
 
 It comes in a badge-style enclosure, so it can be worn as an e-badge or placed on a desk. E-paper only draws power while refreshing; combined with the AXP2101's Li-ion battery management and the PCF8563's timed wake-up, the device can sleep for long periods and refresh on demand, making it well suited to long-term battery operation.
 
@@ -47,10 +47,9 @@ This repository is intended for secondary development and provides ESP-IDF-based
 | PMU | AXP2101 |
 | RTC | PCF8563 |
 | Accelerometer | MSA321 |
-| NFC | ST25R3916 |
 | Storage | 4 MB Flash, microSD |
 | USB | Type-C, ESP32-C5 native USB |
-| Buttons | Reset, Power, GPIO28 button |
+| Buttons | Reset, Power, BOOT |
 | LEDs | Charging (blue), Power on (green) |
 
 Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base_Schematic_V1.0.pdf). Component placement: [hardware/HueLeaf_Base_Placement.pdf](hardware/HueLeaf_Base_Placement.pdf).
@@ -64,20 +63,17 @@ Full schematic: [hardware/HueLeaf_Base_Schematic_V1.0.pdf](hardware/HueLeaf_Base
 | SPI MISO | 9 | TF card |
 | E-paper CS / DC / RST / BUSY | 5 / 6 / 7 / 8 | |
 | TF card CS | 10 | |
-| I2C SDA / SCL | 2 / 3 | Shared by AXP2101, PCF8563, MSA321, ST25R3916 |
+| I2C SDA / SCL | 2 / 3 | Shared by AXP2101, PCF8563, MSA321 |
 | Accelerometer interrupt | 4 | MSA321 |
 | RTC interrupt | 23 | PCF8563 |
-| NFC interrupt | 24 | ST25R3916 |
 | PMIC interrupt | 25 | AXP2101 |
-| NFC enable | 26 | |
-| Button | 28 | Active low |
+| BOOT button | 28 | Active low |
 
 | I2C Device | Address |
 | :--- | :--- |
 | AXP2101 | `0x34` |
 | PCF8563 | `0x51` |
 | MSA321 | `0x62` |
-| ST25R3916 | `0x50` |
 
 ## Contents
 
@@ -99,6 +95,24 @@ Open a web page on your phone or computer and send images or text to the e-paper
 <p align="center">
   <img src="docs/images/device_photo.jpg" alt="Device photo" width="360">
 </p>
+
+#### Factory Firmware Features
+
+The factory firmware is built from this example and supports:
+
+| Category | Features |
+| :--- | :--- |
+| Display | Upload and refresh images, clear and restore the screen; BOOT button rotates the picture by 90°, Power button single press toggles a full white screen |
+| Refresh modes | Six-color dithering, black-and-white dithering |
+| Network | Hotspot (AP) provisioning and router (STA) connection; dual-band 2.4 GHz / 5 GHz Wi-Fi 6 |
+| Charging | AXP2101 fuel gauge with battery capacity self-learning; set the battery's rated capacity to adjust charging current at 0.2C / 0.5C / 1C, up to 1000 mA |
+| Power on / off | Hold Power for 0.5 s to power on, 4 s to power off |
+| TF card | Driver built in; initialization supported |
+| Accelerometer | MSA321 driver built in; initialization and readout supported |
+| RTC | PCF8563 driver built in; initialization, read and write supported |
+
+> [!NOTE]
+> 48 / 64 / 256 / 384 / 512-color global refresh (about 23 s), partial refresh (about 23 s), fast refresh (about 3 s) and partial fast refresh (about 2 s) are not yet available and will come in later releases. Application features for the TF card, accelerometer and RTC will also come in later releases.
 
 #### Flashing
 
@@ -160,14 +174,12 @@ Images are processed in the browser; only the six-color pixel data is uploaded. 
 
 | Button | Function |
 | :--- | :--- |
-| Power (short press) | Toggle the screen between white and the current picture; the picture is retained |
-| GPIO28 button | Rotate the current picture by 90° on each press |
+| Power (hold 0.5 s) | Power on |
+| Power (hold 4 s) | Power off |
+| Power (single press) | Toggle the screen between white and the current picture; the picture is retained |
+| BOOT | Rotate the current picture by 90° on each press |
 
 The default orientation is set by `EINK_ROTATION` in `examples/3.7einkDvb/main/pin_map.h` (`0`, `90`, `180` or `270`; default `0`).
-
-#### NFC Reading
-
-Hold an NFC card near the device; data read is saved to `/sdcard/nfc/` on the TF card (TF card required).
 
 ## License
 
