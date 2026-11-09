@@ -4,6 +4,8 @@ OSPTEK 墨水屏开发套件 · ESP32-C5 主控 · 3.7″ 六色墨水屏 · 双
 
 <p align="center">
   <img src="docs/images/banner.png" alt="OSPTEK 彩叶 HueLeaf 墨水屏开发套件 基础版" width="100%">
+  <img src="docs/images/overview.jpg" >
+  <img src="docs/images/button.jpg>
 </p>
 
 <p align="center">
